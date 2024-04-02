@@ -1,12 +1,11 @@
 import xarray as xr
 ADDITIONALVARS = []
-RECTGRID = True
 
 def gen_ecrad_dset(model_fields : xr.Dataset, solar_irradiance : float,
                    cosine_sz_angle : xr.DataArray, aerosol_mmr : xr.Dataset,
                    ghg_data : xr.Dataset,
                    #lre_fields : xr.DataArray, ire_fields : xr.DataArray,
-                   ignore_iseed : bool = True
+                   rectangular_grid: bool = True, ignore_iseed : bool = True
                   ):
     import numpy as np
     import cf_xarray as cfxr
@@ -80,7 +79,7 @@ def gen_ecrad_dset(model_fields : xr.Dataset, solar_irradiance : float,
         compat="minimal"
     ).assign_attrs({"Aerosols map"   : aerosol_mmr.attrs["aero_map"],
                      "Aerosols types" : aerosol_mmr.attrs["aero_typ"]}).compute()
-    if RECTGRID:
+    if rectangular_grid:
         lonlats = ["lon", "lat"]
         #ecrad_dset = ecrad_dset.transpose("lon", "lat", ..., "half_level", "lev")
         ecrad_dset = ecrad_dset.stack(col=lonlats)
