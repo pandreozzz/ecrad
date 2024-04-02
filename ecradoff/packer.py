@@ -1,10 +1,10 @@
 import xarray as xr
 ADDITIONALVARS = []
 RECTGRID = True
-GHGFILE = "./clim_files/greenhouse_gas_timeseries_CMIP6_SSP370_CFC11equiv_47r1.nc"
 
 def gen_ecrad_dset(model_fields : xr.Dataset, solar_irradiance : float,
                    cosine_sz_angle : xr.DataArray, aerosol_mmr : xr.Dataset,
+                   ghg_data : xr.Dataset,
                    #lre_fields : xr.DataArray, ire_fields : xr.DataArray,
                    ignore_iseed : bool = True
                   ):
@@ -16,11 +16,8 @@ def gen_ecrad_dset(model_fields : xr.Dataset, solar_irradiance : float,
     model_fields       = model_fields.astype("float32")
     cosine_sz_angle    = cosine_sz_angle.astype("float32")
     aerosol_mmr        = aerosol_mmr.astype("float32")
+    ghg_data           = ghg_data.astype("float32")
 
-    # Time should be from fcdate
-    ghg_data = xr.open_dataset(
-        GHGFILE,
-        decode_times=False).sel(time=2020, method="nearest").squeeze().astype("float32")
 
     # Take a required 2D field as mold
     iseed = xr.full_like(model_fields["skt"], 1, dtype=np.int32).rename("iseed")

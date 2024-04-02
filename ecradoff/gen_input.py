@@ -26,6 +26,7 @@ ADDITIONALVARS = ["tcc",]
 
 DA_DTTYPE = "datetime64[D]"
 NS_DTTYPE = "datetime64[ns]"
+NS_TDTYPE = "timedelta64[ns]"
 
 CAMSPATHS = {
     3 : os.path.join(CLIMDIR, "aerosol_cams_3d_climatology_2003-2013.nc"),
@@ -33,6 +34,9 @@ CAMSPATHS = {
     4 : os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc"),
     5 : os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc")
 }
+
+GHGFILE = os.path.join(CLIMDIR, "greenhouse_gas_timeseries_CMIP6_SSP370_CFC11equiv_47r1.nc")
+
 def get_parser():
     parser = argparse.ArgumentParser(prog='Ecrad input generator', description="tbd", epilog="Something informative")
     parser.add_argument("-i", "--model-files",
@@ -121,6 +125,8 @@ def get_aerosol_clim(aerosol_version, model_times):
         dims="time")
 
     cams_dset = xr.open_mfdataset(CAMSPATHS[aerosol_version], parallel=USEDASK)
+
+    # Fix this with correct epoch choice
     if aerosol_version > 3:
         cams_dset = cams_dset.sel(epoch=2015)
 
@@ -153,8 +159,6 @@ def get_aerosol_clim(aerosol_version, model_times):
     aerosol_mmr  = aerosol_mmr.assign_attrs(aero_map=aero_map_str, aero_typ=aero_typ_str)
     aerosol_fields = xr.merge([cams_tintp[PDIM], aerosol_mmr])
 
-    print(aerosol_mmr)
-    exit
 
     print(f"\n\nMapping of aerosol optical properties (version {aerosol_version}):" +\
           "\n-------------------\n" +\
@@ -165,11 +169,41 @@ def get_aerosol_clim(aerosol_version, model_times):
          )
     return aerosol_fields
 
-def get_args(model_fields : xr.Dataset, aerosol_fields : xr.Dataset, time : xr.DataArray):
+def get_ghg_data(model_times):
+
+    def preprocess_ghg_dset(ds):
+        ds = ds.sel(time=slice(1768,2262))
+        years = np.floor(ds["time"].values).astype(int)
+        fracs = ds["time"].values - years
+
+        ds = ds.drop_vars("time")
+        one_year = np.timedelta64(1,'Y').astype(NS_TDTYPE)
+        ds["time"] = xr.DataArray(
+                data=[np.datetime64(f"{y:4d}-01-01").astype(NS_DTTYPE)+one_year*f for y,f in zip(years,fracs)],
+                dims=["time",])
+        return ds
+
+    model_dates = xr.DataArray(
+        data=np.unique(model_times.dt.date.astype("datetime64[ns]")),
+        dims="time")
+
+    # Time should be from fcdate
+    ghg_data = preprocess_ghg_dset(xr.open_dataset(
+        GHGFILE,
+        decode_times=False))
+
+
+    ghg_data = ghg_data.interp(time=model_dates, method="linear",
+                                    kwargs={"fill_value": "extrapolate"}).astype("float32")
+
+    return ghg_data
+
+def get_args(model_fields : xr.Dataset, aerosol_fields : xr.Dataset,
+             ghg_data : xr.Dataset, time : xr.DataArray):
     import minieot
     import ifs_tools
     import aeromaps
-    this_date = time.dt.date.astype(NS_DTTYPE)
+    this_date = time.dt.date.values.astype(NS_DTTYPE)
 
     # Get the model fields
     this_model = model_fields.sel(time=time).squeeze()
@@ -181,6 +215,14 @@ def get_args(model_fields : xr.Dataset, aerosol_fields : xr.Dataset, time : xr.D
     this_aero_fields_intp = aeromaps.interpolate_3d_aerosols(this_aero_fields, this_model["p"])
     this_aero_fields_intp = this_aero_fields_intp.rename("aerosol_mmr").assign_attrs(this_aero_fields["aerosol_mmr"].attrs)
 
+    # Get the ghg data
+    this_ghg_data = ghg_data.sel(time=this_date).squeeze()
+    this_ghg_data["time"] = time
+    print(np.datetime_as_string(time)[:16])
+    for var in this_ghg_data:
+        if var != "time":
+            print(f"{var} : {this_ghg_data[var].values}")
+
     ThisIrradiance   = minieot.Irradiance(time.values)
     solar_irradiance = ThisIrradiance.solar_irr
     cosine_sz_angle  = ThisIrradiance.mu0_cos_sza_deg(phi=model_fields.lat,
@@ -191,6 +233,7 @@ def get_args(model_fields : xr.Dataset, aerosol_fields : xr.Dataset, time : xr.D
         solar_irradiance=solar_irradiance,
         cosine_sz_angle=cosine_sz_angle,
         aerosol_mmr=this_aero_fields_intp,
+        ghg_data=this_ghg_data,
         #cdnc_fields=arg_cdnc,
         #descr=f"yo_{np.datetime_as_stringtime)[:16]}"
     )
@@ -220,11 +263,16 @@ def driver():
     aerosol_fields = get_aerosol_clim(args.aerosol_version, model_times)
 
     ###
+    # Fetch GHG concentrations
+    ###
+    ghg_data = get_ghg_data(model_times)
+
+    ###
     # Each timestep is a separate ecrad input!
     ###
     arglist = []
     for this_time in model_times:
-        arglist.append(get_args(model_fields, aerosol_fields, this_time))
+        arglist.append(get_args(model_fields, aerosol_fields, ghg_data, this_time))
 
     for args,time in zip(arglist,model_times):
         fpath = os.path.join(INPUTSDIR, f"{EXPNAME}_{np.datetime_as_string(time)[:16]}.nc")
