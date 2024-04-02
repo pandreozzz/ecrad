@@ -1,57 +1,59 @@
-import xarray as xr
 from dataclasses import dataclass
+import numpy as np
+import xarray as xr
 
 #############################
 # CAMS SPECIES NAMES
 #############################
 @dataclass
 class ClimSpecies:
-    longname  : str
-    shortname : str
-    spectype  : str
-    spechydro : bool
-    specbin   : int
+    longname: str
+    shortname: str
+    spectype: str
+    spechydro: bool
+    specbin: int
     def __post_init__(self):
         for (name, field_type) in self.__annotations__.items():
             if not isinstance(self.__dict__[name], field_type):
                 current_type = type(self.__dict__[name])
-                raise TypeError(f"The field `{name}` was assigned by `{current_type}` instead of `{field_type}`")
+                raise TypeError(f"The field `{name}` was assigned by `{current_type}`" +\
+                        "instead of `{field_type}`")
 
 AEROCAMSBUCKET = {
-    "Sea_Salt_bin1"                   : ClimSpecies("Sea_Salt_bin1",              
-                                                    "SS1", "SS",  True, 1),
-    "Sea_Salt_bin2"                   : ClimSpecies("Sea_Salt_bin2",              
-                                                    "SS2", "SS",  True, 2),
-    "Sea_Salt_bin3"                   : ClimSpecies("Sea_Salt_bin3",              
-                                                    "SS3", "SS",  True, 3),
-    "Mineral_Dust_bin1"               : ClimSpecies("Mineral_Dust_bin1",          
-                                                    "DD1", "DD", False, 1),
-    "Mineral_Dust_bin2"               : ClimSpecies("Mineral_Dust_bin2",          
-                                                    "DD2", "DD", False, 2),
-    "Mineral_Dust_bin3"               : ClimSpecies("Mineral_Dust_bin3",          
-                                                    "DD3", "DD", False, 3),
-    "Organic_Matter_hydrophilic"      : ClimSpecies("Organic_Matter_hydrophilic", 
-                                                    "OMH", "OM",  True, 0),
-    "Organic_Matter_hydrophobic"      : ClimSpecies("Organic_Matter_hydrophobic", 
-                                                    "OMN", "OM", False, 0),
-    "Black_Carbon_hydrophilic"        : ClimSpecies("Black_Carbon_hydrophilic",   
-                                                    "BCH", "BC",  True, 0),
-    "Black_Carbon_hydrophobic"        : ClimSpecies("Black_Carbon_hydrophobic",   
-                                                    "BCN", "BC", False, 0),
-    "Sulfates"                        : ClimSpecies("Sulfates",                   
-                                                    "SU", "SU",  True, 0),
-    "Nitrate_fine"                    : ClimSpecies("Nitrate_fine",               
-                                                    "NI1", "NI",  True, 1),
-    "Nitrate_coarse"                  : ClimSpecies("Nitrate_coarse",             
-                                                    "NI2", "NI",  True, 2),
-    "Ammonium"                        : ClimSpecies("Ammonium",                   
-                                                    "AM", "AM",  True, 0),  
-    "Biogenic_Secondary_Organic"      : ClimSpecies("Biogenic_Secondary_Organic", 
-                                                    "BSO", "OB",  True, 0),  
-    "Anthropogenic_Secondary_Organic" : ClimSpecies("Anthropogenic_Secondary_Organic",
-                                                    "ASO", "OA",  True, 0),
-    "Stratospheric_Sulfate"           : ClimSpecies("Stratospheric_Sulfate",
-                                                    "SSU", "SSU",  False, 0),  
+    "Sea_Salt_bin1"                  : ClimSpecies("Sea_Salt_bin1",
+                                                   "SS1", "SS", True, 1),
+    "Sea_Salt_bin2"                  : ClimSpecies("Sea_Salt_bin2",
+                                                   "SS2", "SS", True, 2),
+    "Sea_Salt_bin3"                  : ClimSpecies("Sea_Salt_bin3",
+                                                   "SS3", "SS", True, 3),
+    "Mineral_Dust_bin1"              : ClimSpecies("Mineral_Dust_bin1",
+                                                   "DD1", "DD", False, 1),
+    "Mineral_Dust_bin2"              : ClimSpecies("Mineral_Dust_bin2",
+                                                   "DD2", "DD", False, 2),
+    "Mineral_Dust_bin3"              : ClimSpecies("Mineral_Dust_bin3",
+                                                   "DD3", "DD", False, 3),
+    "Organic_Matter_hydrophilic"     : ClimSpecies("Organic_Matter_hydrophilic",
+                                                   "OMH", "OM", True, 0),
+    "Organic_Matter_hydrophobic"     : ClimSpecies("Organic_Matter_hydrophobic",
+                                                   "OMN", "OM", False, 0),
+    "Black_Carbon_hydrophilic"       : ClimSpecies("Black_Carbon_hydrophilic",
+                                                   "BCH", "BC", True, 0),
+    "Black_Carbon_hydrophobic"       : ClimSpecies("Black_Carbon_hydrophobic",
+                                                   "BCN", "BC", False, 0),
+    "Sulfates"                       : ClimSpecies("Sulfates",
+                                                   "SU", "SU", True, 0),
+    "Nitrate_fine"                   : ClimSpecies("Nitrate_fine",
+                                                   "NI1", "NI", True, 1),
+    "Nitrate_coarse"                 : ClimSpecies("Nitrate_coarse",
+                                                   "NI2", "NI", True, 2),
+    "Ammonium"                       : ClimSpecies("Ammonium",
+                                                   "AM", "AM", True, 0),
+    "Biogenic_Secondary_Organic"     : ClimSpecies("Biogenic_Secondary_Organic",
+                                                   "BSO", "OB", True, 0),
+    "Anthropogenic_Secondary_Organic": ClimSpecies("Anthropogenic_Secondary_Organic",
+                                                   "ASO", "OA", True, 0),
+    "Stratospheric_Sulfate"          : ClimSpecies("Stratospheric_Sulfate",
+                                                   "SSU", "SSU", False, 0),
 }
 
 AEROPTICSFILE = "aerosol_ifs_49R1_20230725.nc"
@@ -79,18 +81,18 @@ AEROMAPDESCR[3] = """ (CY48R1 with 43r3 climatology)
       13 -> hydrophobic type 14: Stratospheric sulfate, GACP (hydrophilic ammonium sulfate at RH 20%-30%)
 """
 AEROPTICSMAP[3] = {
-    "Sea_Salt_bin1"                   : (1, True),
-    "Sea_Salt_bin2"                   : (2, True),
-    "Sea_Salt_bin3"                   : (3, True),
-    "Mineral_Dust_bin1"               : (7, False), # Dust Woodward!
-    "Mineral_Dust_bin2"               : (8, False),
-    "Mineral_Dust_bin3"               : (9, False),
-    "Organic_Matter_hydrophilic"      : (4, True), # OPAC
-    "Organic_Matter_hydrophobic"      : (10, False), # OPAC
-    "Black_Carbon_hydrophilic"        : (11, False),
-    "Black_Carbon_hydrophobic"        : (11, False),
-    "Sulfates"                        : (5, True), # GACP
-    "Stratospheric_Sulfate"           : (14, False),  
+    "Sea_Salt_bin1"                  : (1, True),
+    "Sea_Salt_bin2"                  : (2, True),
+    "Sea_Salt_bin3"                  : (3, True),
+    "Mineral_Dust_bin1"              : (7, False), # Dust Woodward!
+    "Mineral_Dust_bin2"              : (8, False),
+    "Mineral_Dust_bin3"              : (9, False),
+    "Organic_Matter_hydrophilic"     : (4, True), # OPAC
+    "Organic_Matter_hydrophobic"     : (10, False), # OPAC
+    "Black_Carbon_hydrophilic"       : (11, False),
+    "Black_Carbon_hydrophobic"       : (11, False),
+    "Sulfates"                       : (5, True), # GACP
+    "Stratospheric_Sulfate"          : (14, False),
 }
 
 AEROMAPDESCR[4] = """ (CY48R1 with 49r2 climatology)
@@ -115,23 +117,23 @@ AEROMAPDESCR[4] = """ (CY48R1 with 49r2 climatology)
       18 -> hydrophobic type 14: Stratospheric sulfate, GACP (hydrophilic ammonium sulfate at RH 20%-30%)
 """
 AEROPTICSMAP[4] = {
-    "Sea_Salt_bin1"                   : (1, True),
-    "Sea_Salt_bin2"                   : (2, True),
-    "Sea_Salt_bin3"                   : (3, True),
-    "Mineral_Dust_bin1"               : (15, False), # Composite-Phobic
-    "Mineral_Dust_bin2"               : (16, False), # Composite-Phobic
-    "Mineral_Dust_bin3"               : (17, False), # Composite-Phobic
-    "Organic_Matter_hydrophilic"      : (11, True),
-    "Organic_Matter_hydrophobic"      : (18, False),
-    "Black_Carbon_hydrophilic"        : (11, False),
-    "Black_Carbon_hydrophobic"        : (11, False),
-    "Sulfates"                        : (13, True),
-    "Nitrate_fine"                    : (9, True),
-    "Nitrate_coarse"                  : (10, True),
-    "Ammonium"                        : (8, True),  
-    "Biogenic_Secondary_Organic"      : (6, True),  
-    "Anthropogenic_Secondary_Organic" : (7, True),
-    "Stratospheric_Sulfate"           : (14, False),  
+    "Sea_Salt_bin1"                  : (1, True),
+    "Sea_Salt_bin2"                  : (2, True),
+    "Sea_Salt_bin3"                  : (3, True),
+    "Mineral_Dust_bin1"              : (15, False), # Composite-Phobic
+    "Mineral_Dust_bin2"              : (16, False), # Composite-Phobic
+    "Mineral_Dust_bin3"              : (17, False), # Composite-Phobic
+    "Organic_Matter_hydrophilic"     : (11, True),
+    "Organic_Matter_hydrophobic"     : (18, False),
+    "Black_Carbon_hydrophilic"       : (11, False),
+    "Black_Carbon_hydrophobic"       : (11, False),
+    "Sulfates"                       : (13, True),
+    "Nitrate_fine"                   : (9, True),
+    "Nitrate_coarse"                 : (10, True),
+    "Ammonium"                       : (8, True),
+    "Biogenic_Secondary_Organic"     : (6, True),
+    "Anthropogenic_Secondary_Organic": (7, True),
+    "Stratospheric_Sulfate"          : (14, False),
 }
 
 AEROMAPDESCR[5] = """
@@ -156,28 +158,28 @@ AEROMAPDESCR[5] = """
       18 -> hydrophobic type 14: Stratospheric sulfate (hydrophilic ammonium sulfate at RH 20%-30%)
 """
 AEROPTICSMAP[5] = {
-    "Sea_Salt_bin1"                   : (1,  True),
-    "Sea_Salt_bin2"                   : (2,  True),
-    "Sea_Salt_bin3"                   : (3,  True),
-    "Mineral_Dust_bin1"               : (14, True), # Composite-Philic Non-Sphere-Scaling-Kandler
-    "Mineral_Dust_bin2"               : (15, True),
-    "Mineral_Dust_bin3"               : (16, True),
-    "Organic_Matter_hydrophilic"      : (11, True), # Brown 2018
-    "Organic_Matter_hydrophobic"      : (18, False), # Brown 2018
-    "Black_Carbon_hydrophilic"        : (12, False),# Bond 2006
-    "Black_Carbon_hydrophobic"        : (12, False),
-    "Sulfates"                        : (13, True), # GACP-NewPSD
-    "Nitrate_fine"                    : (9,  True),
-    "Nitrate_coarse"                  : (10, True),
-    "Ammonium"                        : (8,  True),  
-    "Biogenic_Secondary_Organic"      : (6,  True),  
-    "Anthropogenic_Secondary_Organic" : (7,  True),
-    "Stratospheric_Sulfate"           : (14, False),  
+    "Sea_Salt_bin1"                  : (1, True),
+    "Sea_Salt_bin2"                  : (2, True),
+    "Sea_Salt_bin3"                  : (3, True),
+    "Mineral_Dust_bin1"              : (14, True), # Composite-Philic Non-Sphere-Scaling-Kandler
+    "Mineral_Dust_bin2"              : (15, True),
+    "Mineral_Dust_bin3"              : (16, True),
+    "Organic_Matter_hydrophilic"     : (11, True), # Brown 2018
+    "Organic_Matter_hydrophobic"     : (18, False), # Brown 2018
+    "Black_Carbon_hydrophilic"       : (12, False),# Bond 2006
+    "Black_Carbon_hydrophobic"       : (12, False),
+    "Sulfates"                       : (13, True), # GACP-NewPSD
+    "Nitrate_fine"                   : (9, True),
+    "Nitrate_coarse"                 : (10, True),
+    "Ammonium"                       : (8, True),
+    "Biogenic_Secondary_Organic"     : (6, True),
+    "Anthropogenic_Secondary_Organic": (7, True),
+    "Stratospheric_Sulfate"          : (14, False),
 }
 
-def gen_aerosol_dataset(cams_dset, aero_version : int, verbose=False):
+def gen_aerosol_dataset(cams_dset, aero_version: int, verbose=False):
     '''
-    generate dataset with radiatively-active species and maps to optical properties 
+    generate dataset with radiatively-active species and maps to optical properties
     '''
 
     aero_map = []
@@ -195,41 +197,46 @@ def gen_aerosol_dataset(cams_dset, aero_version : int, verbose=False):
                           "Will be dropped!")
                 var_to_drop.append(aero)
             continue
-        else:
-            idx,hydro = aeroptics[aero]
-            my_map = -idx if hydro else idx
-            aero_map.append(my_map)
-            aero_typ.append(aero)
+        idx, hydro = aeroptics[aero]
+        my_map = -idx if hydro else idx
+        aero_map.append(my_map)
+        aero_typ.append(aero)
 
     return cams_dset.drop_vars(var_to_drop)[aero_typ].squeeze(), aero_typ, aero_map
 
-def interpolate_monthly_aerosols(dset : xr.Dataset or xr.DataArray,
-                             dates : xr.DataArray or np.ndarray) -> xr.Dataset or xr.DataArray:
-    import numpy  as np
+def interpolate_monthly_aerosols(dset: xr.Dataset or xr.DataArray,
+                                 dates: xr.DataArray or np.ndarray) -> xr.Dataset or xr.DataArray:
+    """
+    Interpolation of aerosol monthly climatologies
+    """
 
-    da_dttype = "datetime64[D]"
-    mo_dttype = "datetime64[M]"
     ns_dttype = "datetime64[ns]"
     ns_tdtype = "timedelta64[ns]"
 
-    one_day = np.timedelta64(1,'D').astype(ns_tdtype)
-        
-    prev_month     = (dates - 14*one_day)
-    prev_month     = xr.DataArray(data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype) for y,mo in zip(prev_month.dt.year,prev_month.dt.month)], dims=["time",])
-    foll_month     = (prev_month + 18*one_day)
-    foll_month     = xr.DataArray(data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype) for y,mo in zip(foll_month.dt.year,foll_month.dt.month)], dims=["time",])
+    one_day = np.timedelta64(1, 'D').astype(ns_tdtype)
 
-    monthdelta     = foll_month - prev_month
-    thisdelta      = dates  - prev_month
+    prev_month = (dates - 14*one_day)
+    prev_month = xr.DataArray(
+        data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype)
+              for y, mo in zip(prev_month.dt.year, prev_month.dt.month)],
+        dims=["time",])
+    foll_month = (prev_month + 18*one_day)
+    foll_month = xr.DataArray(
+        data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype)
+              for y, mo in zip(foll_month.dt.year, foll_month.dt.month)],
+        dims=["time",])
 
-    timeweight     = thisdelta/monthdelta
+    monthdelta = foll_month - prev_month
+    thisdelta = dates  - prev_month
 
-    intmonths_bot  = prev_month.dt.month
-    intmonths_top  = foll_month.dt.month
+    timeweight = thisdelta/monthdelta
 
-    intpdset =  (1-timeweight) * dset.sel(month=intmonths_bot).drop_vars("month") +\
-        timeweight*dset.sel(month=intmonths_top).drop_vars("month")
-    
+    intmonths_bot = prev_month.dt.month
+    intmonths_top = foll_month.dt.month
+
+    intpdset = (1-timeweight) * dset.sel(month=intmonths_bot).drop_vars("month") +\
+            timeweight*dset.sel(month=intmonths_top).drop_vars("month")
+
     return intpdset.assign_coords(time=dates)
 
 def interpolate_3d_aerosols(aerosol_fields, model_pres):
@@ -241,13 +248,13 @@ def interpolate_3d_aerosols(aerosol_fields, model_pres):
     # Interpolate aerosols horizontal grid
     print("Horizontally interpolating aerosol fields...")
     aerosol_hintp = aerosol_fields.interp(lat=model_lats, lon=model_lons,
-                                           method="linear",
+                                          method="linear",
                                           kwargs={"fill_value": "extrapolate"}).squeeze().compute()
     # Reorder aerosol fields
     aero_dim = list(set(aerosol_hintp.dims) - set(model_pres.dims))[0]
     aerosol_hintp = aerosol_hintp.transpose(aero_dim, "lon", "lat", "lev")
-    naero_flds = len(aerosol_hintp[aero_dim]) 
-    aero_mmr  = aerosol_hintp["aerosol_mmr"]
+    naero_flds = len(aerosol_hintp[aero_dim])
+    aero_mmr = aerosol_hintp["aerosol_mmr"]
     aero_pres = aerosol_hintp[PDIM]
 
     # Reorder model fields
@@ -255,19 +262,20 @@ def interpolate_3d_aerosols(aerosol_fields, model_pres):
 
     # Get level maps and weights
     print("Computing weights for vertical interpolation...")
-    l, w = fvertintp_iface.interp(aero_pres, model_pres)
+    tgtlevs, weights = fvertintp_iface.interp(aero_pres, model_pres)
 
     # Interpolate aerosol fields
     print("Vertically interpolating aerosol fields...")
     aerosol_mmr_vintp = xr.concat(
         [xr.zeros_like(model_pres).expand_dims(aero_dim, axis=0),]*naero_flds,
         dim=aero_dim)
-    aerosol_mmr_vintp[...] = fvertintp_iface.interp_fld(aero_mmr[...], tgtlevs=l, weights=w)
+    aerosol_mmr_vintp[...] = fvertintp_iface.interp_fld(aero_mmr[...], tgtlevs=tgtlevs,
+                                                        weights=weights)
 
     # When fetching points out of the original grid domain,
     # lienar extrapolation can result in nonphysical values.
     # this is a temporary fix and should be removed by extending original domain
-    # to simulate proper wrapping and remove extrapolation 
+    # to simulate proper wrapping and remove extrapolation
     aerosol_mmr_vintp = aerosol_mmr_vintp.clip(0., 1.)
 
 

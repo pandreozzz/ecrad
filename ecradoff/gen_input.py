@@ -4,22 +4,22 @@ import numpy as np
 import xarray as xr
 
 # Use Dask multiprocessing (does not work)
-USEDASK=False
-MULTIDASK=True
+USEDASK = False
+MULTIDASK = True
 if USEDASK:
     from dask.distributed import Client
     client = Client(processes=MULTIDASK)
     print(client)
     from multiprocessing import freeze_support
 
-CLIMDIR="./clim_files"
+CLIMDIR = "./clim_files"
 # If the climatology fields are not as mmr, but as
 # level-integrated mass concentrations
-CLIMISMMR=False
-GACC=9.8
+CLIMISMMR = False
+GACC = 9.8
 
 INPUTSDIR = "./inputs"
-EXPNAME   = "control"
+EXPNAME = "control"
 
 # Additional variables to be included in the produced fields (ignored by ecrad!)
 ADDITIONALVARS = ["tcc",]
@@ -29,20 +29,22 @@ NS_DTTYPE = "datetime64[ns]"
 NS_TDTYPE = "timedelta64[ns]"
 
 CAMSPATHS = {
-    3 : os.path.join(CLIMDIR, "aerosol_cams_3d_climatology_2003-2013.nc"),
-    #3 : os.path.join(CLIMDIR, "aerosol_cams_climatology_43r3_v2_3D_no_compression_classic.nc"),
-    4 : os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc"),
-    5 : os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc")
+    3: os.path.join(CLIMDIR, "aerosol_cams_3d_climatology_2003-2013.nc"),
+    #3: os.path.join(CLIMDIR, "aerosol_cams_climatology_43r3_v2_3D_no_compression_classic.nc"),
+    4: os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc"),
+    5: os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc")
 }
 
 GHGFILE = os.path.join(CLIMDIR, "greenhouse_gas_timeseries_CMIP6_SSP370_CFC11equiv_47r1.nc")
 
 def get_parser():
-    parser = argparse.ArgumentParser(prog='Ecrad input generator', description="tbd", epilog="Something informative")
+    parser = argparse.ArgumentParser(prog='Ecrad input generator', description="tbd",
+                                     epilog="Something informative")
     parser.add_argument("-i", "--model-files",
                         type=str, nargs="+", required=True,
                         help="The IFS output fields to use for offline computations. " +\
-                        "Typically 1 ml and 1 sfc file. Only times present in both datasets are loaded."
+                        "Typically 1 ml and 1 sfc file. Only times present in both " +\
+                        "datasets are loaded."
                        )
     parser.add_argument("-t", "--times",
                         type=str, nargs="+", default=["0",],
@@ -72,7 +74,7 @@ def get_parser():
                         )
     return parser
 
-def get_model_fields(model_files : list, intimes : list):
+def get_model_fields(model_files: list, intimes: list):
    # Parse input file
     try:
         input_filepaths = [os.path.realpath(f) for f in model_files]
@@ -112,7 +114,7 @@ def get_model_fields(model_files : list, intimes : list):
 
     print("Using following time mappings for physical fields:\n"+\
           "\n".join([f"{str(intime):14} -> {np.datetime_as_string(mtime)[:16]}"
-                     for intime,mtime in zip(intimes,model_origtimes.values)]))
+                     for intime, mtime in zip(intimes, model_origtimes.values)]))
 
     return model_fields
 
@@ -146,41 +148,40 @@ def get_aerosol_clim(aerosol_version, model_times):
     aero_ecrad, aero_typ, aero_map = aeromaps.gen_aerosol_dataset(cams_dset=cams_tintp, aero_version=aerosol_version)
 
     aero_type_coord = "aer_type"
-
     aerosol_mmr = xr.concat(
         [aero_conversion*aero_ecrad[aero].expand_dims(
             dim=aero_type_coord, axis=0
-            ).assign_attrs(unit="Kg/Kg", long_name=aero.replace("_"," ")+" mass mixing ratio")
+            ).assign_attrs(unit="Kg/Kg", long_name=aero.replace("_", " ")+" mass mixing ratio")
          for aero in aero_typ],
         dim=aero_type_coord
     ).rename("aerosol_mmr").assign_coords({aero_type_coord:aero_typ})
-    aero_map_str = ", ".join([f"{idx:d}" for idx in aero_map])
-    aero_typ_str = ", ".join(aero_typ)
-    aerosol_mmr  = aerosol_mmr.assign_attrs(aero_map=aero_map_str, aero_typ=aero_typ_str)
-    aerosol_fields = xr.merge([cams_tintp[PDIM], aerosol_mmr])
+    aerosol_mmr = aerosol_mmr.assign_attrs(
+        aero_map=", ".join([f"{idx:d}" for idx in aero_map]),
+        aero_typ=", ".join(aero_typ))
 
 
     print(f"\n\nMapping of aerosol optical properties (version {aerosol_version}):" +\
           "\n-------------------\n" +\
-          "\n".join([f"{typ:30} -> {i:3d}" for typ,i in zip(aero_typ, aero_map)]) +\
+          "\n".join([f"{typ:30} -> {idx:3d}" for typ, idx in zip(aero_typ, aero_map)]) +\
           "\n-------------------\n" +\
           "Use following ordered map in ecrad namelist:\n" +\
           f"i_aerosol_type_map = {aero_map_str}\n\n"
          )
-    return aerosol_fields
+    return xr.merge([cams_tintp[PDIM], aerosol_mmr])
 
 def get_ghg_data(model_times):
 
     def preprocess_ghg_dset(ds):
-        ds = ds.sel(time=slice(1768,2262))
+        ds = ds.sel(time=slice(1768, 2262))
         years = np.floor(ds["time"].values).astype(int)
         fracs = ds["time"].values - years
 
         ds = ds.drop_vars("time")
-        one_year = np.timedelta64(1,'Y').astype(NS_TDTYPE)
+        one_year = np.timedelta64(1, 'Y').astype(NS_TDTYPE)
         ds["time"] = xr.DataArray(
-                data=[np.datetime64(f"{y:4d}-01-01").astype(NS_DTTYPE)+one_year*f for y,f in zip(years,fracs)],
-                dims=["time",])
+            data=[np.datetime64(f"{y:4d}-01-01").astype(NS_DTTYPE)+one_year*f
+                  for y, f in zip(years, fracs)],
+            dims=["time",])
         return ds
 
     model_dates = xr.DataArray(
@@ -194,12 +195,12 @@ def get_ghg_data(model_times):
 
 
     ghg_data = ghg_data.interp(time=model_dates, method="linear",
-                                    kwargs={"fill_value": "extrapolate"}).astype("float32")
+                               kwargs={"fill_value": "extrapolate"}).astype("float32")
 
     return ghg_data
 
-def get_args(model_fields : xr.Dataset, aerosol_fields : xr.Dataset,
-             ghg_data : xr.Dataset, time : xr.DataArray):
+def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
+             ghg_data: xr.Dataset, time: xr.DataArray):
     import minieot
     import ifs_tools
     import aeromaps
@@ -221,12 +222,12 @@ def get_args(model_fields : xr.Dataset, aerosol_fields : xr.Dataset,
     print(np.datetime_as_string(time)[:16])
     for var in this_ghg_data:
         if var != "time":
-            print(f"{var} : {this_ghg_data[var].values}")
+            print(f"{var}: {this_ghg_data[var].values}")
 
-    ThisIrradiance   = minieot.Irradiance(time.values)
+    ThisIrradiance = minieot.Irradiance(time.values)
     solar_irradiance = ThisIrradiance.solar_irr
-    cosine_sz_angle  = ThisIrradiance.mu0_cos_sza_deg(phi=model_fields.lat,
-                                                      lam=model_fields.lon, zamu0 = False)
+    cosine_sz_angle = ThisIrradiance.mu0_cos_sza_deg(phi=model_fields.lat,
+                                                     lam=model_fields.lon, zamu0=False)
 
     return dict(
         model_fields=this_model,
@@ -236,6 +237,7 @@ def get_args(model_fields : xr.Dataset, aerosol_fields : xr.Dataset,
         ghg_data=this_ghg_data,
         #cdnc_fields=arg_cdnc,
         #descr=f"yo_{np.datetime_as_stringtime)[:16]}"
+        #rectangular_grid=args....
     )
 
 def driver():
@@ -245,8 +247,7 @@ def driver():
     # Parse arguments
     ###
     parser = get_parser()
-    # example test call
-    #args = parser.parse_args("-i ../Ecradoff/rf13_ml_01deg.nc ../Ecradoff/rf13_sfc_01deg.nc -t 2018-02-20T04:20 2018-02-20T05:15 -m linear -r ".split())
+
     args = parser.parse_args()
 
     ###
@@ -274,7 +275,7 @@ def driver():
     for this_time in model_times:
         arglist.append(get_args(model_fields, aerosol_fields, ghg_data, this_time))
 
-    for args,time in zip(arglist,model_times):
+    for args, time in zip(arglist, model_times):
         fpath = os.path.join(INPUTSDIR, f"{EXPNAME}_{np.datetime_as_string(time)[:16]}.nc")
         ecrad_dset = packer.gen_ecrad_dset(**args)
         print(f"Saving to {fpath}...")
@@ -285,4 +286,3 @@ if __name__ == '__main__':
     if USEDASK:
         freeze_support()
     driver()
-

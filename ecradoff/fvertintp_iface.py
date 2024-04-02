@@ -112,7 +112,6 @@ def interp_fld(fsrc, tgtlevs, weights):
 
 if __name__=="__main__":
     from time import time
-    import os
     import xarray as xr
     import numpy as np
 
