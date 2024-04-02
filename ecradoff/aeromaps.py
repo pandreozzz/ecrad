@@ -210,16 +210,19 @@ def interpolate_monthly_aerosols(dset : xr.Dataset or xr.DataArray,
     da_dttype = "datetime64[D]"
     mo_dttype = "datetime64[M]"
     ns_dttype = "datetime64[ns]"
+    ns_tdtype = "timedelta64[ns]"
 
-    one_day = np.timedelta64(1,'D')
+    one_day = np.timedelta64(1,'D').astype(ns_tdtype)
         
-    prev_month     = (dates - 14*one_day).astype(mo_dttype) + 14*one_day
-    foll_month     = (prev_month + 18*one_day).astype(mo_dttype) + 14*one_day
+    prev_month     = (dates - 14*one_day)
+    prev_month     = xr.DataArray(data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype) for y,mo in zip(prev_month.dt.year,prev_month.dt.month)], dims=["time",])
+    foll_month     = (prev_month + 18*one_day)
+    foll_month     = xr.DataArray(data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype) for y,mo in zip(foll_month.dt.year,foll_month.dt.month)], dims=["time",])
 
     monthdelta     = foll_month - prev_month
     thisdelta      = dates  - prev_month
 
-    timeweight     = thisdelta/monthdelta # in [0,1]
+    timeweight     = thisdelta/monthdelta
 
     intmonths_bot  = prev_month.dt.month
     intmonths_top  = foll_month.dt.month
