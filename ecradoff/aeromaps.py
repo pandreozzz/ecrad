@@ -177,6 +177,20 @@ AEROPTICSMAP[5] = {
     "Stratospheric_Sulfate"          : (14, False),
 }
 
+def get_aero_longname(aerotype, aerohydro, aerobin=None):
+    """
+        Fetches aerosol long name from properties.
+        Returns None if not found.
+        If aerobin is not specified and aerotype+aerohydro
+        match an aerosol species, the first bin in the bucket is returned
+    """
+    for long_name,aero in AEROCAMSBUCKET.items():
+        if aerotype == aero.spectype and aerohydro == aero.spechydro:
+            if aerobin is None or aerobin == aero.specbin:
+                return long_name
+    return None
+
+
 def gen_aerosol_dataset(cams_dset, aero_version: int, verbose=False):
     '''
     generate dataset with radiatively-active species and maps to optical properties
@@ -239,6 +253,41 @@ def interpolate_monthly_aerosols(dset: xr.Dataset or xr.DataArray,
 
     return intpdset.assign_coords(time=dates)
 
+def complete_lon_periodic(dset: xr.Dataset or xr.DataArray, method="linear") -> xr.Dataset or xr.DataArray:
+    """
+    Completes eventually missing 0. and 360. longitude values on periodic domain
+    method can be linear or nearest
+    """
+    this_dset = dset.copy()
+
+    minlon = this_dset.lon.min().values
+    maxlon = this_dset.lon.max().values
+
+    appendmax = maxlon < 360
+    appendmin = minlon > 0
+
+
+    # Missing 360
+    if appendmin or appendmax:
+        wei = minlon/(360-maxlon+minlon)
+        borderslice = wei*this_dset.sel(lon=maxlon, drop=True) + (1-wei)*this_dset.sel(lon=minlon, drop=True)
+
+    # Missing 0
+    if appendmax:
+        maxslice = borderslice.assign_coords(lon=360)
+        this_dset = xr.concat(
+            [this_dset, maxslice], dim="lon")
+
+    if appendmin:
+        minslice = borderslice.assign_coords(lon=0)
+        this_dset = xr.concat(
+            [minslice, this_dset], dim="lon")
+
+    this_dset = this_dset.sortby("lon")
+
+    return this_dset
+
+
 def interpolate_3d_aerosols(aerosol_fields, model_pres):
     import fvertintp_iface
 
@@ -247,6 +296,8 @@ def interpolate_3d_aerosols(aerosol_fields, model_pres):
 
     # Interpolate aerosols horizontal grid
     print("Horizontally interpolating aerosol fields...")
+    #if GLOBALDOMAIN:
+    #    aerosol_fields = complete_lon_periodic(aerosol_fields, method="linear")
     aerosol_hintp = aerosol_fields.interp(lat=model_lats, lon=model_lons,
                                           method="linear",
                                           kwargs={"fill_value": "extrapolate"}).squeeze().compute()
@@ -276,7 +327,7 @@ def interpolate_3d_aerosols(aerosol_fields, model_pres):
     # lienar extrapolation can result in nonphysical values.
     # this is a temporary fix and should be removed by extending original domain
     # to simulate proper wrapping and remove extrapolation
-    aerosol_mmr_vintp = aerosol_mmr_vintp.clip(0., 1.)
+    aerosol_mmr_vintp = aerosol_mmr_vintp.clip(0., 1.).assign_coords(aero_dim=aero_mmr[aero_dim])
 
 
     return aerosol_mmr_vintp

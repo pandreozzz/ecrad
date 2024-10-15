@@ -180,6 +180,41 @@ def compute_ccn_ifs(ws :xr.DataArray, lsm : xr.DataArray):
 
     return nd
 
+def compute_liquid_reff_ifslut(dset, cdnc_fields, min_cdnc : float = 1., max_cdnc : float = 3000.,
+                               min_reff : float = 4.,    max_reff : float = 30., cle_reff : float = 2.,
+                               spectr_disp_land :float = 0.73, spectr_disp_sea : float = 0.73):
+    """
+    Reproduced computation of the liquid effective radius from LUT (RADLP = 3)
+    dset xarray.Dataset : must contain the following fields:
+                          * cc         -> grid-point cloud cover
+                          * clwc, crwc -> cloud liquid/rain water content
+                          * lsm        -> land fraction
+                          * p          -> full-level pressure
+                          * t          -> full-level temperature
+
+    Returns:
+    --------
+    xarray.DataArray "re_liquid" containing liquid effective radius in micrometers.
+    """
+
+    mask     = np.logical_and(dset["cc"] >= 0.001, (dset["clwc"]+dset["crwc"]) > 0)
+
+    cloudy_dset = dset.where(mask)
+
+    # Spectral dispersion (land vs. sea) (ZSPECTRAL_DISPERSION)
+    spectr_disp = xr.where(cloudy_dset["lsm"] > 0.5, spectr_disp_land, spectr_disp_sea)
+
+    # Compute liquid and rain water contents
+    air_density_gm3 = 1000 * (cloudy_dset["p"]/(cloudy_dset["t"]*RD)).rename("density")
+    # In-cloud mean water contents found by dividing by cloud
+    # fraction
+    lwc_gm3     = air_density_gm3 * cloudy_dset["clwc"] / cloudy_dset["cc"]
+
+    reff = 100*(0.2387/spectr_disp * lwc_gm3/cdnc_fields.clip(min_cdnc, max_cdnc))**0.333
+    reff = reff.clip(min_reff, max_reff).rename("re_liquid")
+
+    return xr.where(mask, reff, cle_reff)
+
 def compute_liquid_reff_ifs(dset, ccn_fields = None, wood_correction : bool = True,
                         min_reff : float = 4., max_reff : float = 30., cle_reff : float = 2.,
                         min_ccn: float = 1., max_ccn: float = 3000.,

@@ -104,7 +104,7 @@ contains
     end do
 
     !$OMP END PARALLEL DO
-    write(*,*)  "OMP time: ",omp_get_wtime()-timer,"s"
+!    write(*,*)  "OMP time: ",omp_get_wtime()-timer,"s"
   END SUBROUTINE
 
   SUBROUTINE interp_multi_fld(fsrc, fdst, tgtlevs, weights, nflds, nx, ny, nlevsrc, nlevdst)

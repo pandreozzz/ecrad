@@ -1,11 +1,11 @@
 import xarray as xr
-ADDITIONALVARS = []
+from gen_input import ADDITIONALVARS
 
-def gen_ecrad_dset(model_fields : xr.Dataset, solar_irradiance : float,
-                   cosine_sz_angle : xr.DataArray, aerosol_mmr : xr.Dataset,
-                   ghg_data : xr.Dataset,
-                   #lre_fields : xr.DataArray, ire_fields : xr.DataArray,
-                   rectangular_grid: bool = True, ignore_iseed : bool = True
+def gen_ecrad_dset(model_fields: xr.Dataset, solar_irradiance: float,
+                   cosine_sz_angle: xr.DataArray, aerosol_mmr: xr.Dataset,
+                   ghg_data: xr.Dataset,
+                   lut_dset: xr.Dataset = None, lut_recipes: dict = None,
+                   rectangular_grid: bool = True, ignore_iseed: bool = True
                   ):
     import numpy as np
     import cf_xarray as cfxr
@@ -34,16 +34,34 @@ def gen_ecrad_dset(model_fields : xr.Dataset, solar_irradiance : float,
                                     t_full=model_fields["t"], skt_sfc=model_fields["skt"]).astype(np.float32).compute()
 
     # Compute liquid and ice effective radius in meters (requires p in model_fields)
-    w_10m = np.sqrt(model_fields["10u"]**2+model_fields["10v"]**2)
-    ccn_fields = ifst.compute_ccn_ifs(ws=w_10m, lsm=model_fields["lsm"]).astype(np.float32).compute()
-    re_liquid = ifst.compute_liquid_reff_ifs(dset=model_fields, ccn_fields=ccn_fields).astype(np.float32).compute()*1.e-6
+    if lut_recipes and lut_dset:
+        print("re_liquid from LUT!")
+        llut = True
+        import lut_tools as lutt
+        from ifs_tools import RD
+        dens_full = p_full/(RD*model_fields["t"].astype(np.float32))
+        aero_mcon_for_lut = (dens_full*aerosol_mmr).sel(lev=[129,])
+        with_extra_fields = "bin_num" in ADDITIONALVARS or "ccn_num" in ADDITIONALVARS or "ccn_act" in ADDITIONALVARS
+        lut_species_mcon = lutt.compute_lut_species_from_ifs_species(lut_recipes, aero_mcon_for_lut)
+        ccn_fields = lutt.compute_cdnc(lut_species_mcon, lut_dset,
+                                      with_extra_fields=with_extra_fields).squeeze(drop=True)
+
+        re_liquid = ifst.compute_liquid_reff_ifslut(dset=model_fields, cdnc_fields=ccn_fields["cdnc"]).compute()*1.e-6
+        #re_liquid=xr.ones_like(p_full)
+    else:
+        llut = False
+        w_10m = np.sqrt(model_fields["10u"]**2+model_fields["10v"]**2)
+        ccn_fields = ifst.compute_ccn_ifs(ws=w_10m, lsm=model_fields["lsm"]).astype(np.float32).compute()
+        re_liquid = ifst.compute_liquid_reff_ifs(dset=model_fields, ccn_fields=ccn_fields).astype(np.float32).compute()*1.e-6
+
+    # Ice particle size
     re_ice    = ifst.compute_ice_reff_ifs(dset=model_fields, ).astype(np.float32).compute()*1.e-6
 
 
     data_vars = {
         "solar_irradiance"       : xr.DataArray(np.float32(solar_irradiance)),
         "skin_temperature"       : model_fields["skt"],
-        "cos_solar_zenith_angle" : cosine_sz_angle, # approx val
+        "cos_solar_zenith_angle" : cosine_sz_angle,
         "sw_albedo"              : model_fields["fal"], # use spectrally constant albedo
         "lw_emissivity"          : xr.full_like(model_fields["fal"], 0.99, dtype="float32"),
         "iseed"                  : iseed,
@@ -72,7 +90,22 @@ def gen_ecrad_dset(model_fields : xr.Dataset, solar_irradiance : float,
     for additional_var in ADDITIONALVARS:
         if additional_var in model_fields.variables:
             data_vars = {**data_vars,**{additional_var : model_fields[additional_var]}}
-
+            continue
+        match additional_var:
+            case "lre":
+                data_vars["lre"] = re_liquid
+            case "ire":
+                data_vars["ire"] = re_ice
+            case "cdnc":
+                data_vars["cdnc"] = ccn_fields["cdnc"] if llut else ccn_fields
+            case "bin_num" if llut:
+                data_vars["bin_num"] = xr.concat([ccn_fields[f"aero{i}_bin"].assign_coords(lutspec=i) for i in range(1,5)], dim="lutspec")
+            case "ccn_num" if llut:
+                data_vars["ccn_num"] = xr.concat([ccn_fields[f"aero{i}_ccn"].assign_coords(lutspec=i) for i in range(1,5)], dim="lutspec")
+            case "ccn_act" if llut:
+                data_vars["ccn_act"] = xr.concat([ccn_fields[f"aero{i}_act"].assign_coords(lutspec=i) for i in range(1,5)], dim="lutspec")
+            case _:
+                print(f"Warning in packer: Ignoring {additional_var} from ADDITIONALVARS")
 
     ecrad_dset = xr.merge(
         [val.rename(key) for key,val in data_vars.items()],
