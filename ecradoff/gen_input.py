@@ -3,34 +3,45 @@ import argparse
 import numpy as np
 import xarray as xr
 
-# Use Dask multiprocessing (does not work)
+# Use Dask multithread/processing (does not work)
 USEDASK = False
-MULTIDASK = True
+MULTIDASK = False
 if USEDASK:
+    try:
+        NTHREADS=int(os.environ["OMP_NUM_THREADS"])
+    except:
+        NTHREADS=1
     from dask.distributed import Client
-    client = Client(processes=MULTIDASK)
+    client = Client(processes=MULTIDASK, threads_per_worker=NTHREADS, memory_limit="32G")
     print(client)
     from multiprocessing import freeze_support
 
 CLIMDIR = "./clim_files"
 # If the climatology fields are not as mmr, but as
 # level-integrated mass concentrations
-CLIMISMMR = False
+CLIMISMMR = True
 GACC = 9.8
 
 INPUTSDIR = "./inputs"
-EXPNAME = "control"
+EXPNAME = "expname"
+
+# Required fields
+REQUIREDVARS = ["lnsp", "t", "q", "clwc", "cswc", "ciwc", "o3",
+                "skt", "fal", "u10", "v10", "?"]
+
 
 # Additional variables to be included in the produced fields (ignored by ecrad!)
-ADDITIONALVARS = ["tcc",]
+ADDITIONALVARS = ["tcc", "cdnc", "bin_num", "ccn_act", "ccn_num", "mu0_spreader",
+                  "cos_sensor_zenith_angle", "cos_solar_zenith_angle",
+                  "sensor_azimuth_angle", "solar_azimuth_angle", "sea_fraction"]
 
 DA_DTTYPE = "datetime64[D]"
 NS_DTTYPE = "datetime64[ns]"
 NS_TDTYPE = "timedelta64[ns]"
 
 CAMSPATHS = {
-    3: os.path.join(CLIMDIR, "aerosol_cams_3d_climatology_2003-2013.nc"),
-    #3: os.path.join(CLIMDIR, "aerosol_cams_climatology_43r3_v2_3D_no_compression_classic.nc"),
+    #3: os.path.join(CLIMDIR, "aerosol_cams_3d_climatology_2003-2013.nc"),
+    3: os.path.join(CLIMDIR, "aerosol_cams_climatology_43r3_v2_3D_no_compression_classic.nc"),
     4: os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc"),
     5: os.path.join(CLIMDIR, "aerosol_cams_climatology_49r2_1951-2019_4D.nc")
 }
@@ -40,6 +51,10 @@ GHGFILE = os.path.join(CLIMDIR, "greenhouse_gas_timeseries_CMIP6_SSP370_CFC11equ
 def get_parser():
     parser = argparse.ArgumentParser(prog='Ecrad input generator', description="tbd",
                                      epilog="Something informative")
+    parser.add_argument("-n", "--exp-name",
+                        type=str, required=True,
+                        help="Name of the experiment")
+
     parser.add_argument("-i", "--model-files",
                         type=str, nargs="+", required=True,
                         help="The IFS output fields to use for offline computations. " +\
@@ -47,16 +62,17 @@ def get_parser():
                         "datasets are loaded."
                        )
     parser.add_argument("-t", "--times",
-                        type=str, nargs="+", default=["0",],
+                        type=str, nargs="+", default=["all",],
                         help="Model time to use (can be repeated). "+\
                         "Format is YYYY-MM-HH:THH:MM or index starting from 0." +\
-                        "Note that ecRad input at each timestep is stored in a separate file.",
+                        "Note that ecRad input at each timestep is stored in a separate file." +\
+                        "Default is \"all\" - for all model timesteps"
                        )
     parser.add_argument("-r", "--reduced-grid",
                         action="store_true",
                         help="By default expects unstructured input grid (with 1 horizontal dimension)."+\
                         "Select True for rectangular grids (lon,lat) with 2 horizontal dimensions." +\
-                        "False is for reduced grids, ... NOT YET FULLY IMPLEMENTED!!"
+                        "False is for reduced grids, ...    NOT YET FULLY IMPLEMENTED!!"
                        )
     parser.add_argument("-a", "--aerosol-version",
                         type=int, default=3,
@@ -66,6 +82,25 @@ def get_parser():
                         "v4: CY49R2 4D climatology" +\
                         "v5: CY49R2 4D climatology with hydrophilic dust"
                        )
+    parser.add_argument("-lld", "--liquid-lut-dset",
+                        type=str, default=None,
+                        help="LUT dset to compute cdnc from aerosol fields")
+
+    parser.add_argument("-llr", "--liquid-lut-recipes",
+                        type=str, default=None,
+                        help="LUT recipes to compute cdnc from aerosol fields")
+
+    parser.add_argument("-zz", "--zamu0-cosine_sz_angle",
+                        action="store_true",
+                        help="If the cosine of solar zenith angle should go to zero " +\
+                        "or to a finite value (zamu0 true, as in ecrad calls from IFS)"
+                        )
+    parser.add_argument("-si", "--spreader-interval",
+                        type=str, default="0s",
+                        help="Define a spreader (requires zamu0 true) to simulate " +\
+                        "time interpolation of fluxes. Interval is e.g. `15m` for 15 minutes"
+                        )
+
     parser.add_argument("-m", "--time-select-method",
                         type=str, default="nearest",
                         help="Method to use if the times indicated in the sequence are not in the field."+\
@@ -86,20 +121,29 @@ def get_model_fields(model_files: list, intimes: list):
         if not os.path.exists(fpath):
             raise ValueError(f"File does not exist:\n{fpath}")
 
-    model_fields = xr.open_mfdataset(input_filepaths, join="inner", parallel=USEDASK)
+    model_fields = xr.open_mfdataset(input_filepaths, join="inner",
+                                     parallel=USEDASK)#.sel(lon=slice(0,2), lat=slice(0-2))
+    if not USEDASK:
+        model_fields = model_fields.compute()
 
-    # Parse times
-    try:
-        times = [int(tstr) for tstr in intimes]
-        time_by_index = True
-    except:
+    if intimes[0] == "all":
+        print("Using all model times")
+        times = model_fields.time.values
+        intimes = list(range(0,len(times)))
+        time_by_index = False
+    else:
+        # Parse times
         try:
-            times = [np.datetime64(tstr).astype("datetime64[ns]") for tstr in intimes]
-            time_by_index = False
+            times = [int(tstr) for tstr in intimes]
+            time_by_index = True
         except:
-            times = None
-            time_by_index = False
-            raise ValueError(f"Could not parse times either as sequence of steps or as datatime strings:\n{args.time}")
+            try:
+                times = [np.datetime64(tstr).astype("datetime64[ns]") for tstr in intimes]
+                time_by_index = False
+            except:
+                times = None
+                time_by_index = False
+                raise ValueError(f"Could not parse times either as sequence of steps or as datatime strings:\n{args.time}")
 
     # Select model times
     if time_by_index:
@@ -155,8 +199,11 @@ def get_aerosol_clim(aerosol_version, model_times):
          for aero in aero_typ],
         dim=aero_type_coord
     ).rename("aerosol_mmr").assign_coords({aero_type_coord:aero_typ})
+
+
+    aero_map_str = ", ".join([f"{idx:d}" for idx in aero_map])
     aerosol_mmr = aerosol_mmr.assign_attrs(
-        aero_map=", ".join([f"{idx:d}" for idx in aero_map]),
+        aero_map=aero_map_str,
         aero_typ=", ".join(aero_typ))
 
 
@@ -195,12 +242,14 @@ def get_ghg_data(model_times):
 
 
     ghg_data = ghg_data.interp(time=model_dates, method="linear",
-                               kwargs={"fill_value": "extrapolate"}).astype("float32")
+                               kwargs={"fill_value": "extrapolate"}).astype("float32").load()
 
     return ghg_data
 
+
 def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
-             ghg_data: xr.Dataset, time: xr.DataArray):
+             ghg_data: xr.Dataset, lut_dset: xr.Dataset, lut_recipes: xr.Dataset,
+             zamu0: bool, spreader_deltas: np.ndarray, time: xr.DataArray):
     import minieot
     import ifs_tools
     import aeromaps
@@ -216,18 +265,32 @@ def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
     this_aero_fields_intp = aeromaps.interpolate_3d_aerosols(this_aero_fields, this_model["p"])
     this_aero_fields_intp = this_aero_fields_intp.rename("aerosol_mmr").assign_attrs(this_aero_fields["aerosol_mmr"].attrs)
 
+    # Get the CDNC values from LUT
+    if lut_recipes and lut_dset:
+        import lut_tools as lutt
+        lut_recipes_dict = lutt.get_dics_from_recipes_dset(lut_recipes)
+    else:
+        lut_dset = None
+        lut_recipes_dict = None
+
     # Get the ghg data
     this_ghg_data = ghg_data.sel(time=this_date).squeeze()
     this_ghg_data["time"] = time
-    print(np.datetime_as_string(time)[:16])
-    for var in this_ghg_data:
-        if var != "time":
-            print(f"{var}: {this_ghg_data[var].values}")
 
+    # Irradiance
     ThisIrradiance = minieot.Irradiance(time.values)
     solar_irradiance = ThisIrradiance.solar_irr
     cosine_sz_angle = ThisIrradiance.mu0_cos_sza_deg(phi=model_fields.lat,
-                                                     lam=model_fields.lon, zamu0=False)
+                                                     lam=model_fields.lon, zamu0=zamu0)
+    # generate spreader?
+#    this_mu0_spreader = 1.
+#    if spreader_deltas:
+#        for spr_step in spreader_deltas*time:
+#            tmpirr = minieot.Irradiance(spr_step.values)
+#            this_mu0_spreader = this_mu0_spreader + tmpirr.mu0_cos_sza_deg(phi=model_fields.lat,
+#                                                                           lam=model_fields.lon, zamu0=False)
+#        this_mu0_spreader = this_mu0_spreader/(len(spreader_deltas)*cosine_sz_angle)
+
 
     return dict(
         model_fields=this_model,
@@ -235,6 +298,9 @@ def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
         cosine_sz_angle=cosine_sz_angle,
         aerosol_mmr=this_aero_fields_intp,
         ghg_data=this_ghg_data,
+        lut_dset=lut_dset,
+        lut_recipes=lut_recipes_dict,
+        #cosine_sza_spreader=this_mu0_spreader
         #cdnc_fields=arg_cdnc,
         #descr=f"yo_{np.datetime_as_stringtime)[:16]}"
         #rectangular_grid=args....
@@ -249,6 +315,8 @@ def driver():
     parser = get_parser()
 
     args = parser.parse_args()
+    EXPNAME = args.exp_name
+    print(f"Experiment name: {EXPNAME}")
 
     ###
     # Model fields
@@ -263,17 +331,50 @@ def driver():
     ###
     aerosol_fields = get_aerosol_clim(args.aerosol_version, model_times)
 
+
+    ###
+    # LUT for liquid CDNC?
+    ###
+    lut_dset, lut_recipes = args.liquid_lut_dset, args.liquid_lut_recipes
+    if lut_recipes and lut_dset:
+        print("Using LUT for CDNC")
+        lut_recipes = xr.open_dataset(lut_recipes)
+        lut_dset = xr.open_dataset(lut_dset)
+    elif lut_recipes or lut_dset:
+        print("Warning: Both LUT recipes and dset are needed to compute CDNC from LUT!" +\
+              "All LUT settings will be ignored.")
+
     ###
     # Fetch GHG concentrations
     ###
     ghg_data = get_ghg_data(model_times)
 
     ###
+    # Spreader Interval
+    ###
+
+    spreader_deltas = None
+#    try:
+#        spr_mm = re.match("(\d+)(\D+)", args.spreader_interval)
+#        spread_interval = np.timedelta64(spr_mm.group(1), spr_mm.group(2))
+#    except:
+#        spread_interval = np.timedelta64(0,'s')
+#    gen_spreader = spread_interval > np.timedelta64(0,'s') and args.zamu0_cosine_sz_angle
+#    time_diff = np.unique(model_times.diff(dim="time"))
+#    if len(time_diff) == 1:
+#        time_diff = time_diff.values.item()
+#        nints = int(time_diff/spread_interval)
+#        if time_diff =  nints*spread_interval:
+#            spreader_deltas = np.arange(-int(nints/2), nints-int(nints/2))*spread_interval
+
+    ###
     # Each timestep is a separate ecrad input!
     ###
     arglist = []
     for this_time in model_times:
-        arglist.append(get_args(model_fields, aerosol_fields, ghg_data, this_time))
+        arglist.append(get_args(model_fields, aerosol_fields, ghg_data,
+                                lut_dset, lut_recipes, args.zamu0_cosine_sz_angle,
+                                spreader_deltas, this_time))
 
     for args, time in zip(arglist, model_times):
         fpath = os.path.join(INPUTSDIR, f"{EXPNAME}_{np.datetime_as_string(time)[:16]}.nc")
