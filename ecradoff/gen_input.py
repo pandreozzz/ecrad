@@ -48,6 +48,9 @@ CAMSPATHS = {
 
 GHGFILE = os.path.join(CLIMDIR, "greenhouse_gas_timeseries_CMIP6_SSP370_CFC11equiv_47r1.nc")
 
+# Automatically populated by get_model_fields()
+TIMEDIM = None
+
 def get_parser():
     parser = argparse.ArgumentParser(prog='Ecrad input generator', description="tbd",
                                      epilog="Something informative")
@@ -68,7 +71,7 @@ def get_parser():
                         "Note that ecRad input at each timestep is stored in a separate file." +\
                         "Default is \"all\" - for all model timesteps"
                        )
-    parser.add_argument("-r", "--reduced-grid",
+    parser.add_argument("-r", "--rectangular-grid",
                         action="store_true",
                         help="By default expects unstructured input grid (with 1 horizontal dimension)."+\
                         "Select True for rectangular grids (lon,lat) with 2 horizontal dimensions." +\
@@ -80,7 +83,7 @@ def get_parser():
                         help="Version of aerosol fields to use." +\
                         "v3: CY43R3-CY49R1 Bozzo et al. 2020 3D climatology" +\
                         "v4: CY49R2 4D climatology" +\
-                        "v5: CY49R2 4D climatology with hydrophilic dust"
+                        "v5: CY49R1 prognostic - has hydrophilic dust and new PSD for sulfates"
                        )
     parser.add_argument("-lld", "--liquid-lut-dset",
                         type=str, default=None,
@@ -109,7 +112,31 @@ def get_parser():
                         )
     return parser
 
+def gen_reduced_lon(ds : xr.Dataset or xr.DataArray, rpoint_coord : str = "reduced_points"):
+    tmp_ds = ds.copy()
+
+    newlon = np.array([])
+    newlat = np.array([])
+    for rpn, lat in zip(tmp_ds["reduced_points"].values, tmp_ds["lat"].values):
+        newlon = np.concat([newlon, np.arange(0, 360, 360/rpn)], axis=0)
+        newlat = np.concat([newlat, [lat]*rpn], axis=0)
+
+    tmp_ds = tmp_ds.drop_vars("lat")
+    tmp_ds = tmp_ds.assign_coords(
+            lon = xr.DataArray(data=newlon, dims=["values"]),
+            lat = xr.DataArray(data=newlat, dims=["values"])
+            )
+
+    return tmp_ds
+
+
+
 def get_model_fields(model_files: list, intimes: list):
+    renamedic = {
+            "longitude" : "lon",
+            "latitude" : "lat",
+            "rgrid" : "values" # For cdo nc4
+            }
    # Parse input file
     try:
         input_filepaths = [os.path.realpath(f) for f in model_files]
@@ -121,14 +148,21 @@ def get_model_fields(model_files: list, intimes: list):
         if not os.path.exists(fpath):
             raise ValueError(f"File does not exist:\n{fpath}")
 
-    model_fields = xr.open_mfdataset(input_filepaths, join="inner",
-                                     parallel=USEDASK)#.sel(lon=slice(0,2), lat=slice(0-2))
+    if USEDASK:
+        model_fields = xr.open_mfdataset(input_filepaths, join="inner",
+                                         parallel=USEDASK)#.sel(lon=slice(0,2), lat=slice(0-2))
+    else:
+        model_fields = xr.merge([xr.load_dataset(p) for p in input_filepaths])
+
     if not USEDASK:
         model_fields = model_fields.compute()
 
+    global TIMEDIM
+    TIMEDIM = "valid_time" if "valid_time" in model_fields else "time"
+
     if intimes[0] == "all":
         print("Using all model times")
-        times = model_fields.time.values
+        times = model_fields[TIMEDIM].values
         intimes = list(range(0,len(times)))
         time_by_index = False
     else:
@@ -147,18 +181,26 @@ def get_model_fields(model_files: list, intimes: list):
 
     # Select model times
     if time_by_index:
-        model_fields = model_fields.isel(time=times)
+        model_fields = model_fields.isel({TIMEDIM: times})
     else:
-        model_fields = model_fields.sel(time=times, method="nearest")
+        model_fields = model_fields.sel({TIMEDIM: times}, method="nearest")
+
 
     # Store original model times and redefine those in model fields
-    model_origtimes = model_fields["time"]
+    model_origtimes = model_fields[TIMEDIM]
     if not time_by_index:
-        model_fields["time"] = times
+        model_fields[TIMEDIM] = times
 
     print("Using following time mappings for physical fields:\n"+\
           "\n".join([f"{str(intime):14} -> {np.datetime_as_string(mtime)[:16]}"
                      for intime, mtime in zip(intimes, model_origtimes.values)]))
+
+    for vset in (model_fields.variables, model_fields.dims):
+        model_fields = model_fields.rename({var: renamedic[var.lower()]
+                                            for var in vset if var in renamedic})
+
+    if "lon" not in model_fields:
+        model_fields = gen_reduced_lon(model_fields)
 
     return model_fields
 
@@ -168,9 +210,9 @@ def get_aerosol_clim(aerosol_version, model_times):
 
     model_dates = xr.DataArray(
         data=np.unique(model_times.dt.date.astype("datetime64[ns]")),
-        dims="time")
+        dims=TIMEDIM)
 
-    cams_dset = xr.open_mfdataset(CAMSPATHS[aerosol_version], parallel=USEDASK)
+    cams_dset = xr.load_dataset(CAMSPATHS[aerosol_version])
 
     # Fix this with correct epoch choice
     if aerosol_version > 3:
@@ -223,17 +265,18 @@ def get_ghg_data(model_times):
         years = np.floor(ds["time"].values).astype(int)
         fracs = ds["time"].values - years
 
-        ds = ds.drop_vars("time")
+        ds = ds.drop_vars("time").rename(time=TIMEDIM)
         one_year = np.timedelta64(1, 'Y').astype(NS_TDTYPE)
-        ds["time"] = xr.DataArray(
+        ds = ds.assign_coords({
+            TIMEDIM: xr.DataArray(
             data=[np.datetime64(f"{y:4d}-01-01").astype(NS_DTTYPE)+one_year*f
                   for y, f in zip(years, fracs)],
-            dims=["time",])
+            dims=[TIMEDIM,])})
         return ds
 
     model_dates = xr.DataArray(
         data=np.unique(model_times.dt.date.astype("datetime64[ns]")),
-        dims="time")
+        dims=TIMEDIM)
 
     # Time should be from fcdate
     ghg_data = preprocess_ghg_dset(xr.open_dataset(
@@ -241,26 +284,28 @@ def get_ghg_data(model_times):
         decode_times=False))
 
 
-    ghg_data = ghg_data.interp(time=model_dates, method="linear",
-                               kwargs={"fill_value": "extrapolate"}).astype("float32").load()
+    ghg_data = ghg_data.interp(**{
+        TIMEDIM: model_dates, "method":"linear",
+        "kwargs": {"fill_value": "extrapolate"}}).astype("float32").load()
 
     return ghg_data
 
 
 def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
              ghg_data: xr.Dataset, lut_dset: xr.Dataset, lut_recipes: xr.Dataset,
-             zamu0: bool, spreader_deltas: np.ndarray, time: xr.DataArray):
+             zamu0: bool, spreader_deltas: np.ndarray, time: xr.DataArray,
+             rectangular_grid: bool):
     import minieot
     import ifs_tools
     import aeromaps
     this_date = time.dt.date.values.astype(NS_DTTYPE)
 
     # Get the model fields
-    this_model = model_fields.sel(time=time).squeeze()
+    this_model = model_fields.sel({TIMEDIM: time}).squeeze()
 
     # Get the aerosol_mmr and pressure fields
-    this_aero_fields = aerosol_fields.sel(time=this_date).squeeze()
-    this_aero_fields["time"] = time
+    this_aero_fields = aerosol_fields.sel({TIMEDIM: this_date}).squeeze()
+    this_aero_fields[TIMEDIM] = time
     this_model["p"] = ifs_tools.compute_ml_pressure(this_model, half_level=False).squeeze()
     this_aero_fields_intp = aeromaps.interpolate_3d_aerosols(this_aero_fields, this_model["p"])
     this_aero_fields_intp = this_aero_fields_intp.rename("aerosol_mmr").assign_attrs(this_aero_fields["aerosol_mmr"].attrs)
@@ -274,8 +319,8 @@ def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
         lut_recipes_dict = None
 
     # Get the ghg data
-    this_ghg_data = ghg_data.sel(time=this_date).squeeze()
-    this_ghg_data["time"] = time
+    this_ghg_data = ghg_data.sel({TIMEDIM: this_date}).squeeze()
+    this_ghg_data[TIMEDIM] = time
 
     # Irradiance
     ThisIrradiance = minieot.Irradiance(time.values)
@@ -300,6 +345,7 @@ def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
         ghg_data=this_ghg_data,
         lut_dset=lut_dset,
         lut_recipes=lut_recipes_dict,
+        rectangular_grid=rectangular_grid
         #cosine_sza_spreader=this_mu0_spreader
         #cdnc_fields=arg_cdnc,
         #descr=f"yo_{np.datetime_as_stringtime)[:16]}"
@@ -321,14 +367,17 @@ def driver():
     ###
     # Model fields
     ###
+    print("Loading model fields...")
     model_fields = get_model_fields(args.model_files, args.times)
 
     # Extract model times
-    model_times = model_fields["time"]
+    print("Extracting model times...")
+    model_times = model_fields[TIMEDIM]
 
     ###
     # Organize aerosol fields
     ###
+    print("Organizing aerosol fields...")
     aerosol_fields = get_aerosol_clim(args.aerosol_version, model_times)
 
 
@@ -347,6 +396,7 @@ def driver():
     ###
     # Fetch GHG concentrations
     ###
+    print("Fetching GHG data...")
     ghg_data = get_ghg_data(model_times)
 
     ###
@@ -374,7 +424,7 @@ def driver():
     for this_time in model_times:
         arglist.append(get_args(model_fields, aerosol_fields, ghg_data,
                                 lut_dset, lut_recipes, args.zamu0_cosine_sz_angle,
-                                spreader_deltas, this_time))
+                                spreader_deltas, this_time, args.rectangular_grid))
 
     for args, time in zip(arglist, model_times):
         fpath = os.path.join(INPUTSDIR, f"{EXPNAME}_{np.datetime_as_string(time)[:16]}.nc")

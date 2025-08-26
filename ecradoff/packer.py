@@ -28,10 +28,13 @@ def gen_ecrad_dset(model_fields: xr.Dataset, solar_irradiance: float,
     q_ice = (model_fields["ciwc"] + model_fields["cswc"]).rename("q_ice")
 
     # Compute ml p and t
+    print("Computing half-level p and t...")
     p_full = model_fields["p"].astype(np.float32).squeeze()
     p_half = ifst.compute_ml_pressure(model_fields, half_level=True).astype(np.float32).squeeze().compute()
     t_half = ifst.compute_hl_temperature(p_half=p_half, p_full=p_full,
                                     t_full=model_fields["t"], skt_sfc=model_fields["skt"]).astype(np.float32).compute()
+
+    print("done!")
 
     # Compute liquid and ice effective radius in meters (requires p in model_fields)
     if lut_recipes and lut_dset:
@@ -51,12 +54,13 @@ def gen_ecrad_dset(model_fields: xr.Dataset, solar_irradiance: float,
     else:
         llut = False
         w_10m = np.sqrt(model_fields["10u"]**2+model_fields["10v"]**2)
-        ccn_fields = ifst.compute_ccn_ifs(ws=w_10m, lsm=model_fields["lsm"]).astype(np.float32).compute()
+        ccn_fields = ifst.compute_ccn_ifs(ws=w_10m, lsm=model_fields["lsm"]).astype(np.float32)
         re_liquid = ifst.compute_liquid_reff_ifs(dset=model_fields, ccn_fields=ccn_fields).astype(np.float32).compute()*1.e-6
 
     # Ice particle size
+    print("Computing re_ice...")
     re_ice    = ifst.compute_ice_reff_ifs(dset=model_fields, ).astype(np.float32).compute()*1.e-6
-
+    print("done!")
 
     data_vars = {
         "solar_irradiance"       : xr.DataArray(np.float32(solar_irradiance)),
@@ -107,6 +111,7 @@ def gen_ecrad_dset(model_fields: xr.Dataset, solar_irradiance: float,
             case _:
                 print(f"Warning in packer: Ignoring {additional_var} from ADDITIONALVARS")
 
+    print("Merging ecrad_dset...")
     ecrad_dset = xr.merge(
         [val.rename(key) for key,val in data_vars.items()],
         compat="minimal"
@@ -119,8 +124,10 @@ def gen_ecrad_dset(model_fields: xr.Dataset, solar_irradiance: float,
         ecrad_dset = cfxr.encode_multi_index_as_compress(ecrad_dset, "col")
         hordim="col"
     else:
-        hordim = list(set(model_fields.dims) - set(["lev"]))[0]
+        hordim = list(set(model_fields["p"].dims) - set(["lev"]))[0]
+    print(f"Horizontal dimension name: {hordim}")
     ecrad_dset = ecrad_dset.transpose(hordim, ..., "half_level", "lev")
+    print("done!")
 
     for var_to_drop in ("time", "fcdate", "levaux"):
         if var_to_drop in ecrad_dset:

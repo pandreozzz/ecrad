@@ -56,126 +56,121 @@ AEROCAMSBUCKET = {
                                                    "SSU", "SSU", False, 0),
 }
 
-AEROPTICSFILE = "aerosol_ifs_49R1_20230725.nc"
-AEROPTICSMAP = {}
-AEROMAPDESCR = {}
+AEROPTICSFILE = "../data/aerosol_ifs_49R1_20230119.nc"
+
+PHILIC_DESCR = \
+"""
+1: Sea salt, bin 1, 0.03-0.5 micron, OPAC
+2: Sea salt, bin 2, 0.50-5.0 micron, OPAC
+3: Sea salt, bin 3, 5.0-20.0 micron, OPAC
+4: Hydrophilic organic matter, OPAC
+5: Ammonium sulfate (for sulfate), GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/
+6: Secondary organic aerosol - biogenic, Moise et al 2015
+7: Secondary organic aerosol - anthropogenic, Moise et al 2015
+8: Fine mode Ammonium sulfate (for ammonia), GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/
+9: Fine mode Nitrate, GLOMAP
+10: Coarse mode Nitrate, GLOMAP
+11: Hydrophilic organic matter, Brown et al 2018
+12: Sulfate, GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/
+13: Sulfate, GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/ with modified size distribution
+14: Desert dust, bin 1, 0.03-0.55 micron, Composite-Philic Non-Sphere-Scaling-Kandler (Balkanski et 2007 , Di Baggio 2017, Ryder et al 2019)
+15: Desert dust, bin 2, 0.55-0.90 micron, Composite-Philic Non-Sphere-Scaling-Kandler (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
+16: Desert dust, bin 3, 0.90-20.0 micron, Composite-Philic Non-Sphere-Scaling-Kandler (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
+17: Desert dust, bin 1, 0.03-0.55 micron, Composite-Philic (Balkanski et 2007 , Di Baggio 2017, Ryder et al 2019)
+18: Desert dust, bin 2, 0.55-0.90 micron, Composite-Philic (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
+19: Desert dust, bin 3, 0.90-20.0 micron, Composite-Philic (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
+"""
+PHOBIC_DESCR = \
+"""
+1: Desert dust, bin 1, 0.03-0.55 micron, (SW) Dubovik et al. 2002 (LW) Fouquart et al. 1987
+2: Desert dust, bin 2, 0.55-0.90 micron, (SW) Dubovik et al. 2002 (LW) Fouquart et al. 1987
+3: Desert dust, bin 3, 0.90-20.0 micron, (SW) Dubovik et al. 2002 (LW) Fouquart et al. 1987
+4: Desert dust, bin 1, 0.03-0.55 micron, Fouquart et al 1987
+5: Desert dust, bin 2, 0.55-0.90 micron, Fouquart et al 1987
+6: Desert dust, bin 3, 0.90-20.0 micron, Fouquart et al 1987
+7: Desert dust, bin 1, 0.03-0.55 micron, Woodward 2001, Table 2
+8: Desert dust, bin 2, 0.55-0.90 micron, Woodward 2001, Table 2
+9: Desert dust, bin 3, 0.90-20.0 micron, Woodward 2001, Table 2
+10: Hydrophobic organic matter, OPAC (hydrophilic at RH=20%)
+11: Black carbon, OPAC
+12: Black carbon, Bond and Bergstrom 2006
+13: Black carbon, Stier et al 2007
+14: Stratospheric sulfate (hydrophilic ammonium sulfate at RH 20%-30%)
+15: Desert dust, bin 1, 0.03-0.55 micron, Composite (Balkanski et 2007 , Di Baggio 2017, Ryder et al 2019)
+16: Desert dust, bin 2, 0.55-0.90 micron, Composite (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
+17: Desert dust, bin 3, 0.90-20.0 micron, Composite (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
+18: Hydrophobic organic matter, Brown et al 2018 (hydrophilic at RH=20%)
+19: Black carbon, Williams 2007
+"""
+
+
+OPTICS_AERO_MAP = {}
+
+###
+## Prognostic 43r3 and Bozzo climatology
+###
+OPTICS_AERO_MAP[3] = {
+    "Sea_Salt_bin1"                   : (1, True),
+    "Sea_Salt_bin2"                   : (2, True),
+    "Sea_Salt_bin3"                   : (3, True),
+    "Mineral_Dust_bin1"               : (7, False), # Composite-Phobic
+    "Mineral_Dust_bin2"               : (8, False), # Composite-Phobic
+    "Mineral_Dust_bin3"               : (9, False), # Composite-Phobic
+    "Organic_Matter_hydrophilic"      : (4, True),
+    "Organic_Matter_hydrophobic"      : (4, False),
+    "Black_Carbon_hydrophilic"        : (11, False),
+    "Black_Carbon_hydrophobic"        : (11, False),
+    "Sulfates"                        : (5, True)
+}
+
+###
+## Prognostic 48r1
+###
+OPTICS_AERO_MAP[4] = {
+    **OPTICS_AERO_MAP[3].copy(),
+    **{
+    "Nitrate_fine"                    : (9, True),
+    "Nitrate_coarse"                  : (10, True),
+    "Ammonium"                        : (8, True),
+    "Biogenic_Secondary_Organic"      : (6, True),
+    "Anthropogenic_Secondary_Organic" : (7, True),
+    "Stratospheric_Sulfate"           : (14, False),
+    }
+}
+# Composite phobic dust
+OPTICS_AERO_MAP[4]["Mineral Dust_bin1"] = (15, False)
+OPTICS_AERO_MAP[4]["Mineral Dust_bin2"] = (16, False)
+OPTICS_AERO_MAP[4]["Mineral Dust_bin3"] = (17, False)
+# Brown OM
+OPTICS_AERO_MAP[4]["Organic_Matter_hydrophilic"] = (11, True)
+OPTICS_AERO_MAP[4]["Organic_Matter_hydrophobic"] = (10, False)
+
+###
+## IFS-COMPO 48r1-based 4D climatology (Tim's) deployed in IFS 49R2
+## has inconsistent sulfates
+###
+OPTICS_AERO_MAP[41]  = OPTICS_AERO_MAP[4].copy()
+OPTICS_AERO_MAP[41]["Sulfates"] = (13, True)
+
+###
+## Prognostic 49r1
+###
+OPTICS_AERO_MAP[5] = OPTICS_AERO_MAP[4].copy()
+
+# Hydrophilic Dust
+OPTICS_AERO_MAP[5]["Mineral Dust_bin1"] = (14, True)
+OPTICS_AERO_MAP[5]["Mineral Dust_bin2"] = (15, True)
+OPTICS_AERO_MAP[5]["Mineral Dust_bin3"] = (16, True)
+
+# Bond BC
+OPTICS_AERO_MAP[5]["Mineral Dust_bin3"] = (12, False)
+
+###################
+###################
 
 PDIM = "pressure"
 HLDPDIM = "half_level_delta_pressure"
 HLPDIM = "half_level_pressure"
-
-AEROMAPDESCR[3] = """ (CY48R1 with 43r3 climatology)
-    Aerosol mapping:
-       1 -> hydrophilic type 1: Sea salt, bin 1, 0.03-0.5 micron, OPAC
-       2 -> hydrophilic type 2: Sea salt, bin 2, 0.50-5.0 micron, OPAC
-       3 -> hydrophilic type 3: Sea salt, bin 3, 5.0-20.0 micron, OPAC
-       4 -> hydrophobic type 7: Desert dust, bin 1, 0.03-0.55 micron, Woodward 2001, Table 2
-       5 -> hydrophobic type 8: Desert dust, bin 2, 0.55-0.90 micron, Woodward 2001, Table 2
-       6 -> hydrophobic type 9: Desert dust, bin 3, 0.90-20.0 micron, Woodward 2001, Table 2
-       7 -> hydrophilic type 4: Hydrophilic organic matter, OPAC
-       8 -> hydrophobic type 10: Hydrophobic organic matter, OPAC (hydrophilic at RH=20%)
-       9 -> hydrophobic type 11: Black carbon, OPAC
-      10 -> hydrophobic type 11: Black carbon, OPAC
-      11 -> hydrophilic type 5: Ammonium sulfate (for sulfate), GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/
-      12 -> hydrophobic type 10: Hydrophobic organic matter, OPAC (hydrophilic at RH=20%) (TROPOSPHERIC BACKGROND ORGANIC)
-      13 -> hydrophobic type 14: Stratospheric sulfate, GACP (hydrophilic ammonium sulfate at RH 20%-30%)
-"""
-AEROPTICSMAP[3] = {
-    "Sea_Salt_bin1"                  : (1, True),
-    "Sea_Salt_bin2"                  : (2, True),
-    "Sea_Salt_bin3"                  : (3, True),
-    "Mineral_Dust_bin1"              : (7, False), # Dust Woodward!
-    "Mineral_Dust_bin2"              : (8, False),
-    "Mineral_Dust_bin3"              : (9, False),
-    "Organic_Matter_hydrophilic"     : (4, True), # OPAC
-    "Organic_Matter_hydrophobic"     : (10, False), # OPAC
-    "Black_Carbon_hydrophilic"       : (11, False),
-    "Black_Carbon_hydrophobic"       : (11, False),
-    "Sulfates"                       : (5, True), # GACP
-    "Stratospheric_Sulfate"          : (14, False),
-}
-
-AEROMAPDESCR[4] = """ (CY48R1 with 49r2 climatology)
-    Aerosol mapping:
-       1 -> hydrophilic type 1: Sea salt, bin 1, 0.03-0.5 micron, OPAC
-       2 -> hydrophilic type 2: Sea salt, bin 2, 0.50-5.0 micron, OPAC
-       3 -> hydrophilic type 3: Sea salt, bin 3, 5.0-20.0 micron, OPAC
-       4 -> hydrophobic type 15: Desert dust, bin 1, 0.03-0.55 micron, Composite (Balkanski et 2007 , Di Baigo 2017, Ryder et al 2019)
-       5 -> hydrophobic type 16: Desert dust, bin 2, 0.55-0.90 micron, Composite (Balkanski el 2007 , Di Baigo 2017, Ryder et al 2019)
-       6 -> hydrophobic type 17: Desert dust, bin 3, 0.90-20.0 micron, Composite (Balkanski el 2007 , Di Baigo 2017, Ryder et al 2019)
-       7 -> hydrophilic type 11: Hydrophilic organic matter, Brown et al 2018
-       8 -> hydrophobic type 18: Hydrophobic organic matter, Brown et al 2018 (hydrophilic at RH=20%)
-       9 -> hydrophobic type 11: Black carbon, OPAC
-      10 -> hydrophobic type 11: Black carbon, OPAC
-      11 -> hydrophilic type 13: Sulfate, GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/ with modified size distribution
-      12 -> hydrophilic type 9: Fine mode Nitrate, GLOMAP
-      13 -> hydrophilic type 10: Coarse mode Nitrate, GLOMAP
-      14 -> hydrophilic type 8: Fine mode Ammonium sulfate (for ammonia), GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/
-      15 -> hydrophilic type 6: Secondary organic aerosol - biogenic, Moise et al 2015
-      16 -> hydrophilic type 7: Secondary organic aerosol - anthropogenic, Moise et al 2015
-      17 -> hydrophobic type 18: Hydrophobic organic matter, Brown et al 2018 (hydrophilic at RH=20%)  (TROPOSPHERIC BACKGROND ORGANIC)
-      18 -> hydrophobic type 14: Stratospheric sulfate, GACP (hydrophilic ammonium sulfate at RH 20%-30%)
-"""
-AEROPTICSMAP[4] = {
-    "Sea_Salt_bin1"                  : (1, True),
-    "Sea_Salt_bin2"                  : (2, True),
-    "Sea_Salt_bin3"                  : (3, True),
-    "Mineral_Dust_bin1"              : (15, False), # Composite-Phobic
-    "Mineral_Dust_bin2"              : (16, False), # Composite-Phobic
-    "Mineral_Dust_bin3"              : (17, False), # Composite-Phobic
-    "Organic_Matter_hydrophilic"     : (11, True),
-    "Organic_Matter_hydrophobic"     : (18, False),
-    "Black_Carbon_hydrophilic"       : (11, False),
-    "Black_Carbon_hydrophobic"       : (11, False),
-    "Sulfates"                       : (13, True),
-    "Nitrate_fine"                   : (9, True),
-    "Nitrate_coarse"                 : (10, True),
-    "Ammonium"                       : (8, True),
-    "Biogenic_Secondary_Organic"     : (6, True),
-    "Anthropogenic_Secondary_Organic": (7, True),
-    "Stratospheric_Sulfate"          : (14, False),
-}
-
-AEROMAPDESCR[5] = """
-    Aerosol mapping:
-       1 -> hydrophilic type 1: Sea salt, bin 1, 0.03-0.5 micron, OPAC
-       2 -> hydrophilic type 2: Sea salt, bin 2, 0.50-5.0 micron, OPAC
-       3 -> hydrophilic type 3: Sea salt, bin 3, 5.0-20.0 micron, OPAC
-       4 -> hydrophilic type 14: Desert dust, bin 1, 0.03-0.55 micron, Composite-Philic Non-Sphere-Scaling-Kandler (Balkanski et 2007 , Di Baggio 2017, Ryder et al 2019)
-       5 -> hydrophilic type 15: Desert dust, bin 2, 0.55-0.90 micron, Composite-Philic Non-Sphere-Scaling-Kandler (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
-       6 -> hydrophilic type 16: Desert dust, bin 3, 0.90-20.0 micron, Composite-Philic Non-Sphere-Scaling-Kandler (Balkanski el 2007 , Di Baggio 2017, Ryder et al 2019)
-       7 -> hydrophilic type 11: Hydrophilic organic matter, Brown et al 2018
-       8 -> hydrophobic type 18: Hydrophobic organic matter, Brown et al 2018 (hydrophilic at RH=20%)
-       9 -> hydrophobic type 12: Black carbon, Bond and Bergstrom 2006
-      10 -> hydrophobic type 12: Black carbon, Bond and Bergstrom 2006
-      11 -> hydrophilic type 13: Sulfate, GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/ with modified size distribution
-      12 -> hydrophilic type 9: Fine mode Nitrate, GLOMAP
-      13 -> hydrophilic type 10: Coarse mode Nitrate, GLOMAP
-      14 -> hydrophilic type 8: Fine mode Ammonium sulfate (for ammonia), GACP Lacis et al https://gacp.giss.nasa.gov/data_sets/
-      15 -> hydrophilic type 6: Secondary organic aerosol - biogenic, Moise et al 2015
-      16 -> hydrophilic type 7: Secondary organic aerosol - anthropogenic, Moise et al 2015
-      17 -> hydrophobic type 18: Hydrophobic organic matter, Brown et al 2018 (hydrophilic at RH=20%)  (TROPOSPHERIC BACKGROND ORGANIC)
-      18 -> hydrophobic type 14: Stratospheric sulfate (hydrophilic ammonium sulfate at RH 20%-30%)
-"""
-AEROPTICSMAP[5] = {
-    "Sea_Salt_bin1"                  : (1, True),
-    "Sea_Salt_bin2"                  : (2, True),
-    "Sea_Salt_bin3"                  : (3, True),
-    "Mineral_Dust_bin1"              : (14, True), # Composite-Philic Non-Sphere-Scaling-Kandler
-    "Mineral_Dust_bin2"              : (15, True),
-    "Mineral_Dust_bin3"              : (16, True),
-    "Organic_Matter_hydrophilic"     : (11, True), # Brown 2018
-    "Organic_Matter_hydrophobic"     : (18, False), # Brown 2018
-    "Black_Carbon_hydrophilic"       : (12, False),# Bond 2006
-    "Black_Carbon_hydrophobic"       : (12, False),
-    "Sulfates"                       : (13, True), # GACP-NewPSD
-    "Nitrate_fine"                   : (9, True),
-    "Nitrate_coarse"                 : (10, True),
-    "Ammonium"                       : (8, True),
-    "Biogenic_Secondary_Organic"     : (6, True),
-    "Anthropogenic_Secondary_Organic": (7, True),
-    "Stratospheric_Sulfate"          : (14, False),
-}
 
 def get_aero_longname(aerotype, aerohydro, aerobin=None):
     """
@@ -200,7 +195,7 @@ def gen_aerosol_dataset(cams_dset, aero_version: int, verbose=False):
     aero_typ = []
     var_to_drop = []
 
-    aeroptics = AEROPTICSMAP[aero_version]
+    aeroptics = OPTICS_AERO_MAP[aero_version]
 
     for aero in cams_dset.data_vars:
         if aero not in aeroptics:
@@ -224,39 +219,25 @@ def interpolate_monthly_aerosols(dset: xr.Dataset or xr.DataArray,
     Interpolation of aerosol monthly climatologies
     """
 
-    ns_dttype = "datetime64[ns]"
-    ns_tdtype = "timedelta64[ns]"
+    prev_month     = (dates.values - np.timedelta64(14,'D')).astype("datetime64[M]")+ np.timedelta64(14,'D')
+    foll_month     = (prev_month + np.timedelta64(18,'D')).astype("datetime64[M]") + np.timedelta64(14,'D')
 
-    one_day = np.timedelta64(1, 'D').astype(ns_tdtype)
+    monthdelta     = foll_month - prev_month
+    thisdelta      = dates  - prev_month.astype("datetime64[ns]")
 
-    prev_month = (dates - 14*one_day)
-    prev_month = xr.DataArray(
-        data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype)
-              for y, mo in zip(prev_month.dt.year, prev_month.dt.month)],
-        dims=["time",])
-    foll_month = (prev_month + 18*one_day)
-    foll_month = xr.DataArray(
-        data=[np.datetime64(f"{y:04d}-{mo:02d}-15").astype(ns_dttype)
-              for y, mo in zip(foll_month.dt.year, foll_month.dt.month)],
-        dims=["time",])
+    timeweight     = thisdelta/monthdelta # in [0,1]
 
-    monthdelta = foll_month - prev_month
-    thisdelta = dates  - prev_month
+    intmonths_bot  = xr.DataArray(data=prev_month.astype("datetime64[ns]"), coords={"time":dates}).dt.month
+    intmonths_top  = xr.DataArray(data=foll_month.astype("datetime64[ns]"), coords={"time":dates}).dt.month
 
-    timeweight = thisdelta/monthdelta
-
-    intmonths_bot = prev_month.dt.month
-    intmonths_top = foll_month.dt.month
-
-    intpdset = (1-timeweight) * dset.sel(month=intmonths_bot).drop_vars("month") +\
-            timeweight*dset.sel(month=intmonths_top).drop_vars("month")
-
-    return intpdset.assign_coords(time=dates)
+    return  (1-timeweight) * dset.sel(month=intmonths_bot).drop_vars("month") +\
+        timeweight*dset.sel(month=intmonths_top).drop_vars("month")
 
 def complete_lon_periodic(dset: xr.Dataset or xr.DataArray, method="linear") -> xr.Dataset or xr.DataArray:
     """
     Completes eventually missing 0. and 360. longitude values on periodic domain
-    method can be linear or nearest
+    only supported method is linear. If either 0 or 360 are present,
+    then those are copied to fill the missing values.
     """
     this_dset = dset.copy()
 
@@ -287,47 +268,87 @@ def complete_lon_periodic(dset: xr.Dataset or xr.DataArray, method="linear") -> 
 
     return this_dset
 
+def complete_lat_boundaries(dset: xr.Dataset or xr.DataArray) -> xr.Dataset or xr.DataArray:
+    """
+    Completes latitudes 90N and 90S boundary values
+    """
 
-def interpolate_3d_aerosols(aerosol_fields, model_pres):
-    import fvertintp_iface
+    this_dset = dset.copy()
 
-    model_lons = model_pres["lon"]
-    model_lats = model_pres["lat"]
+    minlat = this_dset.lat.min().values
+    maxlat = this_dset.lat.max().values
+
+    appendmax = maxlat < 90
+    appendmin = minlat > -90
+
+    if appendmin:
+        minslice = this_dset.sel(lat=minlat).assign_coords(lat=-90)
+        this_dset = xr.concat(
+            [minslice, this_dset], dim="lat"
+        )
+    if appendmax:
+        maxslice = this_dset.sel(lat=maxlat).assign_coords(lat=90)
+        this_dset = xr.concat(
+            [this_dset, maxslice], dim="lat"
+        )
+
+    this_dset = this_dset.sortby("lat", ascending=False)
+
+    return this_dset
+
+
+def interpolate_3d_aerosols(aerosol_fields : xr.DataArray, model_pres : xr.DataArray,
+global_domain : bool =True):
+    import fvertintp_iface as fvint
+    import stack_tools as stack
+
 
     # Interpolate aerosols horizontal grid
     print("Horizontally interpolating aerosol fields...")
-    #if GLOBALDOMAIN:
-    #    aerosol_fields = complete_lon_periodic(aerosol_fields, method="linear")
+    aerosol_fields = complete_lat_boundaries(
+        complete_lon_periodic(aerosol_fields, method="linear")
+    )
+
+    model_lons = model_pres["lon"]
+    model_lats = model_pres["lat"]
     aerosol_hintp = aerosol_fields.interp(lat=model_lats, lon=model_lons,
                                           method="linear",
-                                          kwargs={"fill_value": "extrapolate"}).squeeze().compute()
+                                          kwargs={"fill_value": np.nan}).squeeze().compute()
+
     # Reorder aerosol fields
-    aero_dim = list(set(aerosol_hintp.dims) - set(model_pres.dims))[0]
-    aerosol_hintp = aerosol_hintp.transpose(aero_dim, "lon", "lat", "lev")
-    naero_flds = len(aerosol_hintp[aero_dim])
+    tmp_src = aerosol_hintp[PDIM]
+    tmp_dst = model_pres
+
+    tmp_stacktools = stack.tools_to_stack_xarrays(
+        src_arr=tmp_src, dst_arr=tmp_dst,
+        intp_dim_name="lev")
+
+    tgtlevs, weights = fvint.interp(
+        psrc=tmp_src.transpose(*tmp_stacktools.src_dim_order).values.reshape(tmp_stacktools.src_stackshape),
+        ptgt=tmp_dst.transpose(*tmp_stacktools.dst_dim_order).values.reshape(tmp_stacktools.dst_stackshape)
+    )
+    tgtlevs = xr.DataArray(data=tgtlevs.reshape(tmp_stacktools.out_shape),
+                            dims=tmp_stacktools.out_dim_order, coords=tmp_stacktools.out_coords)
+    weights = xr.DataArray(data=weights.reshape(tmp_stacktools.out_shape),
+                            dims=tmp_stacktools.out_dim_order, coords=tmp_stacktools.out_coords)
+
+    del tmp_stacktools, tmp_src, tmp_dst
+
     aero_mmr = aerosol_hintp["aerosol_mmr"]
-    aero_pres = aerosol_hintp[PDIM]
 
-    # Reorder model fields
-    model_pres = model_pres.transpose("lon", "lat", "lev")
+    tmp_stacktools = stack.tools_to_stack_xarrays(
+        src_arr=aero_mmr, dst_arr=tgtlevs,
+        intp_dim_name="lev")
 
-    # Get level maps and weights
-    print("Computing weights for vertical interpolation...")
-    tgtlevs, weights = fvertintp_iface.interp(aero_pres, model_pres)
-
-    # Interpolate aerosol fields
     print("Vertically interpolating aerosol fields...")
-    aerosol_mmr_vintp = xr.concat(
-        [xr.zeros_like(model_pres).expand_dims(aero_dim, axis=0),]*naero_flds,
-        dim=aero_dim)
-    aerosol_mmr_vintp[...] = fvertintp_iface.interp_fld(aero_mmr[...], tgtlevs=tgtlevs,
-                                                        weights=weights)
+    aero_mmr_vintp = xr.DataArray(
+        data=fvint.interp_fld(
+            fsrc=aero_mmr.transpose(*tmp_stacktools.src_dim_order).values.reshape(tmp_stacktools.src_stackshape),
+            tgtlevs=tgtlevs.transpose(*tmp_stacktools.dst_dim_order).values.reshape(tmp_stacktools.dst_stackshape),
+            weights=weights.transpose(*tmp_stacktools.dst_dim_order).values.reshape(tmp_stacktools.dst_stackshape)
+            ).reshape(tmp_stacktools.out_shape),
+        dims=tmp_stacktools.out_dim_order, coords=tmp_stacktools.out_coords
+    )
 
-    # When fetching points out of the original grid domain,
-    # lienar extrapolation can result in nonphysical values.
-    # this is a temporary fix and should be removed by extending original domain
-    # to simulate proper wrapping and remove extrapolation
-    aerosol_mmr_vintp = aerosol_mmr_vintp.clip(0., 1.).assign_coords(aero_dim=aero_mmr[aero_dim])
-
-
-    return aerosol_mmr_vintp
+    print("Interpolation done")
+    return aero_mmr_vintp

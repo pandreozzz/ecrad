@@ -4,8 +4,8 @@ SWITCH=$1
 DATE="1956-10-28"
 LEVLIST=$(seq -s "/" 1 137)
 STEPS=00/06/12/18
-GRID="N320" #"0.25/0.25"
-griddesc="N320" #"025deg"
+GRID="O96" #"0.25/0.25"
+griddesc="O96" #"025deg"
 
 #if [[ ${SWITCH} == 0 ]]
 #then

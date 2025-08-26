@@ -136,7 +136,7 @@ def compute_ice_reff_ifs(dset, latitude = None, default_re :float = 10., min_ice
 
     # Do computations where clouds are
     mask        = np.logical_and(dset["cc"] >= 0.001, (dset["ciwc"]+dset["cswc"]) > 0)
-    cloudy_dset = dset.where(mask)
+    cloudy_dset = dset[["p", "t", "ciwc", "cswc", "cc"]].where(mask)
 
     # Compute liquid and rain water contents
     air_density_gm3 = (1000*cloudy_dset["p"]/(cloudy_dset["t"]*RD)).rename("density")
@@ -239,7 +239,7 @@ def compute_liquid_reff_ifs(dset, ccn_fields = None, wood_correction : bool = Tr
 
     mask     = np.logical_and(dset["cc"] >= 0.001, (dset["clwc"]+dset["crwc"]) > 0)
 
-    cloudy_dset = dset.where(mask)
+    cloudy_dset = dset[["lsm", "p", "t", "clwc", "crwc", "cc"]].where(mask)
 
     # Spectral dispersion (land vs. sea) (ZSPECTRAL_DISPERSION)
     spectr_disp = xr.where(dset["lsm"] > 0.5, spectr_disp_land, spectr_disp_sea).where(mask)

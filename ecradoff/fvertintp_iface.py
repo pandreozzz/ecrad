@@ -1,3 +1,4 @@
+import os
 import ctypes as ct
 import numpy as np
 
@@ -7,142 +8,91 @@ c_real_ptr = np.ctypeslib.ndpointer(c_real)#ct.POINTER(c_real)
 c_int  = ct.c_int32
 c_int_ptr = np.ctypeslib.ndpointer(c_int)#ct.POINTER(c_int)
 
-f_lib.interp.argtypes = [c_real_ptr,]*2+[c_int_ptr, c_real_ptr]+[c_int,]*4
-f_lib.interp_fld.argtypes = [c_real_ptr,]*2+[c_int_ptr, c_real_ptr]+[c_int,]*4
-f_lib.interp_multi_fld.argtypes = [c_real_ptr,]*2+[c_int_ptr, c_real_ptr]+[c_int,]*5
+f_lib.interp.argtypes = [c_real_ptr,]*2+[c_int_ptr, c_real_ptr]+[c_int,]*6
+f_lib.interp_fld.argtypes = [c_real_ptr,]*2+[c_int_ptr, c_real_ptr]+[c_int,]*6
 
-def interp(psrc, ptgt):
+def interp(psrc, ptgt, chunk_size_max=1000):
     """
         Interpolates psrc to ptgt
-        psrc(nx,ny,nlevsrc)
-        ptgt(nx,ny,nlevtgt)
+        psrc(ncom,nsrc,nlevsrc)
+        ptgt(ncom,ntgt,nlevtgt)
 
         returns
-        tgtlevs(nx,ny,nlevtgt), weights(nx,ny,nlevtgt)
+        tgtlevs(ncom,nsrc,ntgt,nlevtgt), weights(ncom,nsrc,ntgt,nlevtgt)
     """
-    nx,ny,nlevtgt   = ptgt.shape
-    nx2,ny2,nlevsrc = psrc.shape
+    ncom,ntgt,nlevtgt  = ptgt.shape
+    ncom2,nsrc,nlevsrc = psrc.shape
 
 
-
-    if (nx != nx2) or (ny != ny2):
+    if (ncom != ncom2):
         raise ValueError(
-                "Different horizontal dimensions between source and target!"+\
-                f"({nx},{ny}) and ({nx2},{ny2})")
+                "Different common dimension size between source and target!"+\
+                f"({ncom2},{nsrc}) and ({ncom},{nsrc})")
 
 
-    tgtlevs = np.zeros_like(ptgt, dtype=c_int)
-    weights = np.zeros_like(ptgt, dtype=c_real)
+    outshape = (ncom,nsrc,ntgt,nlevtgt)
+
+    tgtlevs = np.zeros(outshape, dtype=c_int)
+    weights = np.zeros(outshape, dtype=c_real)
 
     # Enforce contiguity
-    psrc = np.ascontiguousarray(psrc)
-    ptgt = np.ascontiguousarray(ptgt)
+    psrc_cont = np.ascontiguousarray(psrc)
+    ptgt_cont = np.ascontiguousarray(ptgt)
     tgtlevs = np.ascontiguousarray(tgtlevs)
     weights = np.ascontiguousarray(weights)
 
     f_lib.interp(
-            psrc.astype(c_real),
-            ptgt.astype(c_real),
-            tgtlevs,
-            weights,
-            c_int(nx), c_int(ny),
-            c_int(nlevsrc), c_int(nlevtgt)
-            )
+        psrc_cont.astype(c_real), ptgt_cont.astype(c_real),
+        tgtlevs, weights,
+        c_int(ncom), c_int(nsrc), c_int(ntgt),
+        c_int(nlevsrc), c_int(nlevtgt), c_int(chunk_size_max)
+        )
+    del psrc_cont, ptgt_cont
+
     return tgtlevs, weights
 
-def interp_fld(fsrc, tgtlevs, weights):
+def interp_fld(fsrc, tgtlevs, weights, chunk_size_max=1000):
     """
         Interpolates fields according to weights
-        fsrc(nfields,nx,ny,nlevsrc)
-        tgtlevs(nx,ny,nlevdst)
-        weights(nx,ny,nlevdst)
+        fsrc(ncom,nsrc,nlevsrc)
+        tgtlevs(ncom,ntgt,nlevtgt)
+        weights(ncom,ntgt,nlevtgt)
 
         returns
-        fdst(nx,ny,nlevdst)
+        fdst(ncom,nsrc,ntgt,nlevtgt)
     """
-    fsrc_shape = fsrc.shape
-    if len(fsrc_shape) == 4:
-        nflds,nx2,ny2,nlevsrc = fsrc_shape
-    else:
-        nflds = 0
-        nx2,ny2,nlevsrc  = fsrc_shape
-    nx,ny,nlevdst    = tgtlevs.shape
-    nx1,ny1,nlevdst1 = weights.shape
+    ncom,nsrc,nlevsrc = fsrc.shape
 
-    if (nx != nx1) or (ny != ny1) or (nlevdst != nlevdst1):
-        raise ValueError(
-                "Different shape dimensions between tgtlevs and weights!"+\
-                f"({nx},{ny},{nlevdst}) and ({nx1},{ny1},{nlevdst1})")
-    if (nx != nx2) or (ny != ny2):
-        raise ValueError(
-                "Different horizontal dimensions between weights and source fields!"+\
-                f"({nx},{ny}) and ({nx2},{ny2})")
+    ncom2,ntgt,nlevtgt   = tgtlevs.shape
+    ncom3,ntgt2,nlevtgt2 = weights.shape
 
-    fdst = np.zeros_like(weights, dtype=c_real)
-    if nflds > 0:
-        fdst = np.concatenate([fdst[None, ...],]*nflds, axis=0)
+    if (ncom != ncom2) or (ncom2 != ncom3) or (ntgt != ntgt2) or (nlevtgt != nlevtgt2):
+        raise ValueError(
+                "Some dimensions are incompatible!!"+\
+                f"fsrc(ncom={ncom},nsrc={nsrc},nlevsrc{nlevsrc})"+\
+                f"tgtlevs(ncom={ncom2},ntgt={ntgt},nlevtgt{nlevtgt})"+\
+                f"tgtlevs(ncom={ncom3},ntgt={ntgt2},nlevtgt{nlevtgt2})")
+
+    fdstshape = (ncom,nsrc,ntgt,nlevtgt)
+    fdst = np.zeros(fdstshape, dtype=c_real)
 
     # Enforce contiguity
-    fsrc = np.ascontiguousarray(fsrc)
+    fsrc_cont = np.ascontiguousarray(fsrc)
     fdst = np.ascontiguousarray(fdst)
-    tgtlevs = np.ascontiguousarray(tgtlevs)
-    weights = np.ascontiguousarray(weights)
+    tgtlevs_cont = np.ascontiguousarray(tgtlevs)
+    weights_cont = np.ascontiguousarray(weights)
 
-    if nflds == 0:
-        f_lib.interp_fld(
-                fsrc.astype(c_real),
-                fdst,
-                tgtlevs.astype(c_int),
-                weights.astype(c_real),
-                c_int(nx), c_int(ny),
-                c_int(nlevsrc), c_int(nlevdst)
-                )
-    else:
-        f_lib.interp_multi_fld(
-                fsrc.astype(c_real),
-                fdst,
-                tgtlevs.astype(c_int),
-                weights.astype(c_real),
-                c_int(nflds),
-                c_int(nx), c_int(ny),
-                c_int(nlevsrc), c_int(nlevdst)
-                )
+    f_lib.interp_fld(
+            fsrc_cont.astype(c_real),
+            fdst,
+            tgtlevs_cont.astype(c_int),
+            weights_cont.astype(c_real),
+            c_int(ncom), c_int(nsrc), c_int(ntgt),
+            c_int(nlevsrc), c_int(nlevtgt), c_int(chunk_size_max)
+            )
+    del fsrc_cont, tgtlevs_cont, weights_cont
 
     return fdst
 
 if __name__=="__main__":
-    from time import time
-    import xarray as xr
-    import numpy as np
-
-    renamedic=dict(longitude="lon", latitude="lat", level="lev")
-    cams = {vers : xr.open_mfdataset(f"cams_{vers}_mini.nc", parallel=True).rename(renamedic) for vers in ("43r3","49r2")}
-    ifs_lnsp = xr.open_mfdataset(f"mini_lnsp.nc", parallel=True)
-
-    vers = "43r3"
-    # src = "60"
-    # tgt = "137"
-
-    stdcoeffs=xr.open_dataset("stdcoeffs.nc")
-
-    cams_sel = cams[vers].sortby("lat", ascending=False).drop_vars("leadtime")
-
-    p_src = cams_sel[PDIM]
-    p_tgt = (stdcoeffs["coeff_137"].sel(order=0, drop=True) +\
-             stdcoeffs["coeff_137"].sel(order=1,drop=True)*np.exp(ifs_lnsp["lnsp"])).rename(lev_137="lev")
-
-    this_p_src = p_src.transpose("lat","lon","lev").isel(lat=[0,], lon=[0,])
-    this_p_tgt = p_tgt.transpose("time","lat","lon","lev").isel(lat=[0,], lon=[0,])
-    src_hordim = this_p_src.isel(lev=0,drop=True).dims
-    tgt_hordim = this_p_tgt.isel(lev=0,drop=True).dims
-
-    tgtlevs1 = xr.zeros_like(this_p_tgt).astype(int)
-    weights1 = xr.zeros_like(this_p_tgt)
-
-    start = time()
-    for t in this_p_tgt.time:
-        l, w = interp(psrc=this_p_src.values,ptgt=this_p_tgt.sel(time=t).values)
-        tgtlevs1.loc[tgtlevs1.time==t] = l
-        weights1.loc[weights1.time==t] = w
-
-    print(f"It took {time() - start}s")
+    print(f"Hi! This is the interface to the fortran pressure interpolation routine")

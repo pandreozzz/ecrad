@@ -1,8 +1,8 @@
 import os
-import numpy as np
-
+import numpy  as np
+import xarray as xr
 # IFS data
-IFSDATADIR = "../data"
+IFSDATADIR = "/home/rdx/data/49r1/ifsdata"
 
 # RDAY
 DAYSECS = 86400
@@ -16,39 +16,81 @@ REA     = 1.
 REPSM   = 0.409093
 
 # solar irradiance dset
-IFSIRRVERS =  "49r1"
+IFSIRRVERS = "49r1"
 SOLIRRDSET = os.path.join(IFSDATADIR, f"total_solar_irradiance_CMIP6_{IFSIRRVERS}.nc")
 
 
 # Class Irradiance
 class Irradiance:
-    def __init__(self, date : np.datetime64, delay_s : float = 0., ifs_like_2pi : bool = True,
+    def __init__(self, date : np.datetime64 or np.ndarray or xr.DataArray,
+                 delay_s : float = 0., ifs_like_2pi : bool = True,
                  ignore_eot : bool = False, skip_irr : bool = False):
-        if not isinstance(date, np.datetime64):
-            raise ValueError("date must be of type np.datetime64!")
+        """
+        Class to reproduce astronomical computations in the IFS
+        """
+        # Ensure date has legal type
+        _date_is_xarray = isinstance(date, xr.DataArray)
+        _date_is_ndarray = isinstance(date, np.ndarray)
+        _date_is_scalar = isinstance(date, np.datetime64)
+
+        if not (_date_is_xarray or _date_is_ndarray or _date_is_scalar):
+            raise ValueError("date must be of type np.datetime64 or np.ndarray or xr.DataArray!")
+        self.date_type = type(date)
+
+        _year_type = "datetime64[Y]"
+        _day_type = "datetime64[D]"
+        _float_type = np.float32
 
         def _year_fraction(self) -> float:
             """ Computes the fraction of the yearly Earth's orbit
             around the sun from the start of the year to date
             RTETA
             """
-            this_yr        = self.date.astype("datetime64[Y]")
+            if _date_is_xarray:
+                this_yr = self.date.values.astype(_year_type)
+            else:
+                this_yr        = self.date.astype(_year_type)
+
             return (self.date - this_yr)/(np.timedelta64(24, "h")*YEADAYS)
 
         def _day_fraction(self) -> float:
             """ Computes the fraction of the day at the current date
             """
-            today = self.date.astype("datetime64[D]")
+
+            if _date_is_xarray:
+                today = self.date.values.astype(_day_type)
+            else:
+                today = self.date.astype(_day_type)
             return (self.date - today)/np.timedelta64(24, "h")
 
         def _get_solar_irr(self) -> float:
-            import xarray as xr
-            sol_irr_dset = xr.open_dataset(SOLIRRDSET, decode_times=False)["tsi"]
+            sun_irr_dset = xr.open_dataset(SOLIRRDSET, decode_times=False)["tsi"]
 
-            this_yr      = self.date.astype("datetime64[Y]").astype(int)+1970
+            if _date_is_xarray:
+                this_yr = self.date.dt.year.values
+            else:
+                this_yr      = self.date.astype(_year_type).astype(int)+1970
+
             now_yr       = this_yr + self.year_fraction
 
-            sun_irr      = float(sol_irr_dset.interp(time=now_yr, method="linear"))
+            if _date_is_ndarray:
+                indexer_shape = now_yr.shape
+                now_yr = now_yr.flatten(order='C')
+
+            # Cannot get values out of dataset bound
+            min_dset_yr = sun_irr_dset.time.min().values
+            max_dset_yr = sun_irr_dset.time.max().values
+            now_yr_clipped = np.clip(now_yr, min_dset_yr, max_dset_yr)
+            if np.any(now_yr != now_yr_clipped):
+                print("Warning! some dates are outside of the domain" \
+                      "covered by the solar irradiance dataset!" \
+                      f"year span: {min_dset_yr:.1f}->{max_dset_yr:.1f}")
+
+            sun_irr      = sun_irr_dset.interp(time=now_yr_clipped,
+                                               method="linear").astype(_float_type)
+
+            if _date_is_ndarray:
+                sun_irr = sun_irr.values.reshape(indexer_shape, order='C')
 
             return sun_irr*(1/self.earth_sun_dist_frac**2)
 
@@ -96,17 +138,12 @@ class Irradiance:
             """
             two_pi = 6.283076 if ifs_like_2pi else 2*np.pi
             relative_rlls = 4.8951 + two_pi*self.year_fraction
+            orbit_theta_rem = _orbit_theta_rem(self)
 
-            sin_rem       = np.sin(self.orbit_theta_rem)
+            sin_rem       = np.sin(orbit_theta_rem)
             return 591.8*np.sin(2*relative_rlls) - 459.4*sin_rem +\
                 +39.5*sin_rem*np.cos(2*relative_rlls)            +\
-                -12.7*np.sin(4*relative_rlls) - 4.8*np.sin(2*self.orbit_theta_rem)
-
-        def _solar_time(self) -> float:
-            """ Computes the solar time at the current date in radians
-            date : np.datetime64 or np.ndarray of np.datetime64
-            """
-            return 2*np.pi*(self.eq_of_time_s/DAYSECS + self.day_fraction)
+                -12.7*np.sin(4*relative_rlls) - 4.8*np.sin(2*orbit_theta_rem)
 
         # Set date
         self.date            = date - np.timedelta64(1,"s")*delay_s
@@ -117,7 +154,6 @@ class Irradiance:
 
         # Require self.year_fraction
         self.orbit_theta     = _orbit_theta(self)
-        self.orbit_theta_rem = _orbit_theta_rem(self)
 
         # Require self.orbit_theta
         self.earth_sun_dist_frac = _earth_sun_dist_frac(self)
@@ -128,13 +164,48 @@ class Irradiance:
         # Require self.orbit_theta_rem (option to ignore equation of time)
         self.eq_of_time_s    = 0. if ignore_eot else _equation_of_time_s(self)
 
-        # Requires self.eq_of_time_s
-        self.solar_time      = _solar_time(self)
-
         # Require year_fraction and earth_sun_dist_frac
-        if not skip_irr:
-            self.solar_irr       = _get_solar_irr(self)
+        self.solar_irr = None if skip_irr else _get_solar_irr(self)
 
+    def solar_time(self) -> float:
+        """ Computes the solar time at the current date in radians
+        date : np.datetime64 or np.ndarray of np.datetime64
+        """
+        return 2*np.pi*(self.eq_of_time_s/DAYSECS + self.day_fraction)
+
+    def solar_coords_rad(self):
+        """ Computes sun position in the Earth's coordinates
+        returns lat, lon in radians
+        """
+
+        return self.sun_declination_rad, self.solar_time()
+
+    def solar_coords_deg(self):
+        """ Computes sun position in the Earth's coordinates
+        returns lat, lon in degrees
+        """
+        lat_rad, lon_rad = solar_coords_rad(self)
+
+        return np.rad2deg(lat_rad), np.rad2deg(lon_rad)
+
+
+    def solar_angles(self, phi, lam):
+        """ After https://doi.org/10.1016/j.renene.2021.03.047
+            phi   : float or np.ndarray latitude in radians
+            lam   : float or np.ndarray longitude in radians
+        """
+        # subsolar point longitude
+        lams = np.mod(-2*np.pi*(self.eq_of_time_s/86400 + self.day_fraction + 0.5), 2*np.pi)
+        # subsolar point latitude = declination
+        phis = self.sun_declination_rad
+        Sx = np.cos(phis)*np.sin(lams - lam)
+        Sy = np.cos(phi)*np.sin(phis) - np.sin(phi)*np.cos(phis)*np.cos(lams - lam)
+        Sz = np.sin(phi)*np.sin(phis) + np.cos(phi)*np.cos(phis)*np.cos(lams - lam)
+
+        sza = np.arccos(Sz)
+        saa = np.arctan2(Sx, Sy)
+
+        return sza, saa
 
     def mu0_cos_sza_rad(self, phi : float, lam : float, zamu0 : bool = False) -> float:
         """ Computes the cosine of solar zenith angle at the current date
@@ -144,9 +215,8 @@ class Irradiance:
         zamu0 : bool set to true to simulate IFS input to ecrad
         """
 
-
         decl       = self.sun_declination_rad
-        h_angle    = self.solar_time + lam + np.pi
+        h_angle    = self.solar_time() + lam + np.pi
         mu0        = np.sin(decl)*np.sin(phi) + \
                     + np.cos(decl)*np.cos(phi)*np.cos(h_angle)
         if zamu0:
@@ -165,3 +235,34 @@ class Irradiance:
         """
 
         return self.mu0_cos_sza_rad(phi=np.deg2rad(phi), lam=np.deg2rad(lam), zamu0=zamu0)
+
+    def zenith_rad(self, phi : float, lam : float) -> float:
+        """ Computes the zenith distance theta
+        at the current date (in radians)
+        date : np.datetime64 or np.ndarray of np.datetime64
+        phi  : float or np.ndarray latitude in radians
+        lam  : float or np.ndarray longitude in radians
+        """
+
+        return np.arccos(self.mu0_cos_sza_deg(phi, lam))
+
+
+    def zenith_deg(self, phi : float, lam : float) -> float:
+        """ Computes the zenith distance theta
+        at the current date (in radians)
+        date : np.datetime64 or np.ndarray of np.datetime64
+        phi  : float or np.ndarray latitude in degrees
+        lam  : float or np.ndarray longitude in degres
+        """
+
+        return self.zenith_rad(np.deg2rad(phi), np.deg2rad(lam))
+
+    def azimuth_rad(self, phi : float, lam : float) -> float:
+        """ Computes the azimuth  phi
+        at the current date (in radians)
+        date : np.datetime64 or np.ndarray of np.datetime64
+        phi  : float or np.ndarray latitude in radians
+        lam  : float or np.ndarray longitude in radians
+        """
+
+        return np.arccos(self.mu0_cos_sza_deg(phi, lam))
