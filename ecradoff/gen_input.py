@@ -118,7 +118,7 @@ def gen_reduced_lon(ds : xr.Dataset or xr.DataArray, rpoint_coord : str = "reduc
     newlon = np.array([])
     newlat = np.array([])
     for rpn, lat in zip(tmp_ds["reduced_points"].values, tmp_ds["lat"].values):
-        newlon = np.concat([newlon, np.arange(0, 360, 360/rpn)], axis=0)
+        newlon = np.concat([newlon, np.arange(0, 360, 360/rpn)[0:rpn]], axis=0)
         newlat = np.concat([newlat, [lat]*rpn], axis=0)
 
     tmp_ds = tmp_ds.drop_vars("lat")
@@ -201,6 +201,8 @@ def get_model_fields(model_files: list, intimes: list):
 
     if "lon" not in model_fields:
         model_fields = gen_reduced_lon(model_fields)
+
+    print(f"Variables in model_fields: {', '.join([v for v in model_fields.variables])}")
 
     return model_fields
 
