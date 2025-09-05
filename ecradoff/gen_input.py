@@ -123,11 +123,11 @@ def gen_reduced_lon(ds : xr.Dataset or xr.DataArray, rpoint_coord : str = "reduc
 
     tmp_ds = tmp_ds.drop_vars("lat")
     tmp_ds = tmp_ds.assign_coords(
-            lon = xr.DataArray(data=newlon, dims=["values"]),
-            lat = xr.DataArray(data=newlat, dims=["values"])
+            lon = xr.DataArray(data=newlon, dims=["col"]),
+            lat = xr.DataArray(data=newlat, dims=["col"])
             )
 
-    return tmp_ds
+    return tmp_ds.drop_vars("reduced_points")
 
 
 
@@ -135,7 +135,8 @@ def get_model_fields(model_files: list, intimes: list):
     renamedic = {
             "longitude" : "lon",
             "latitude" : "lat",
-            "rgrid" : "values" # For cdo nc4
+            "rgrid" : "col", # For cdo nc4
+            "rgrid" : "col"
             }
    # Parse input file
     try:
@@ -309,7 +310,11 @@ def get_args(model_fields: xr.Dataset, aerosol_fields: xr.Dataset,
     this_aero_fields = aerosol_fields.sel({TIMEDIM: this_date}).squeeze()
     this_aero_fields[TIMEDIM] = time
     this_model["p"] = ifs_tools.compute_ml_pressure(this_model, half_level=False).squeeze()
-    this_aero_fields_intp = aeromaps.interpolate_3d_aerosols(this_aero_fields, this_model["p"])
+    if "reduced_points" in model_fields:
+        redpts_tgt = model_fields["reduced_points"].rename(reduced_points="lat").assign_coords(lat=model_fields["lat"])
+    else:
+        redpts_tgt = None
+    this_aero_fields_intp = aeromaps.interpolate_3d_aerosols(this_aero_fields, this_model["p"], reduced_pts_tgt=redpts_tgt)
     this_aero_fields_intp = this_aero_fields_intp.rename("aerosol_mmr").assign_attrs(this_aero_fields["aerosol_mmr"].attrs)
 
     # Get the CDNC values from LUT

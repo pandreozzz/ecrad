@@ -298,22 +298,64 @@ def complete_lat_boundaries(dset: xr.Dataset or xr.DataArray) -> xr.Dataset or x
 
 
 def interpolate_3d_aerosols(aerosol_fields : xr.DataArray, model_pres : xr.DataArray,
-global_domain : bool =True):
+global_domain : bool = True, reduced_pts_src = None, reduced_pts_tgt = None, flat_dim : str = "col"):
+    import interp_2d_iface as i2d
     import fvertintp_iface as fvint
     import stack_tools as stack
 
 
     # Interpolate aerosols horizontal grid
-    print("Horizontally interpolating aerosol fields...")
-    aerosol_fields = complete_lat_boundaries(
-        complete_lon_periodic(aerosol_fields, method="linear")
-    )
+    # print("Horizontally interpolating aerosol fields...")
+    # aerosol_fields = complete_lat_boundaries(
+    #     complete_lon_periodic(aerosol_fields, method="linear")
+    # )
 
-    model_lons = model_pres["lon"]
-    model_lats = model_pres["lat"]
-    aerosol_hintp = aerosol_fields.interp(lat=model_lats, lon=model_lons,
-                                          method="linear",
-                                          kwargs={"fill_value": np.nan}).squeeze().compute()
+    # model_lons = model_pres["lon"]
+    # model_lats = model_pres["lat"]
+    # aerosol_hintp = aerosol_fields.interp(lat=model_lats, lon=model_lons,
+    #                                       method="linear",
+    #                                       kwargs={"fill_value": np.nan}).squeeze().compute()
+
+
+    if reduced_pts_src is not None:
+        lats_src = reduced_pts_src.lat.values
+        lons_src = np.zeros_like(lats_src)
+        redpts_src = reduced_pts_src.values
+        gtyp_src = 2
+    else:
+        lats_src = aerosol_fields.lat.values
+        lons_src = aerosol_fields.lon.values
+        redpts_src = None
+        gtyp_src = 3 if "col" in aerosol_fields.dims else 1
+
+    if reduced_pts_tgt is not None:
+        lats_tgt = reduced_pts_tgt.lat.values
+        lons_tgt = np.zeros_like(lats_tgt)
+        redpts_tgt = reduced_pts_tgt.values
+        gtyp_tgt = 2
+    else:
+        lats_tgt = model_pres.lat.values
+        lons_tgt = model_pres.lon.values
+        redpts_tgt = None
+        gtyp_tgt = 3 if "col" in model_pres.dims else 1
+    
+        
+    src2dgrid = i2d.GridDef("srcgrid", gtyp=gtyp_src, lons=lons_src, lats=lats_src, reduced_pts=redpts_src)
+    tgt2dgrid = i2d.GridDef("tgtgrid", gtyp=gtyp_tgt, lons=lons_tgt, lats=lats_tgt, reduced_pts=redpts_tgt)
+
+    aerosol_hintp = xr.Dataset()
+    for var in ["pressure", "aerosol_mmr"]:
+        tmp_stacktools = stack.tools_to_stack_2dgrids(aerosol_fields[var], srcgrid=src2dgrid,
+                                                      tgtgrid=tgt2dgrid, flat_dim=flat_dim)
+        aerosol_hintp[var] = xr.DataArray(
+            data=i2d.interp_2d(
+                aerosol_fields[var].transpose(*tmp_stacktools.src_dim_order).values.reshape(tmp_stacktools.src_stackshape),
+                srcgrid=src2dgrid, tgtgrid=tgt2dgrid
+            ).reshape(tmp_stacktools.out_shape),
+            dims=tmp_stacktools.out_dim_order,
+            coords=tmp_stacktools.out_coords,
+        )
+        del tmp_stacktools
 
     # Reorder aerosol fields
     tmp_src = aerosol_hintp[PDIM]
