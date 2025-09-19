@@ -91,7 +91,7 @@ endif
 ### --- BUILD TARGETS --- ###
 #############################
 
-all: build
+all: build build_ecradoff
 
 help:
 	@echo "Usage:"
@@ -115,6 +115,7 @@ else
 build: directories libifsaux libutilities libifsrrtm libradiation \
 	driver ifsdriver symlinks
 endif
+
 
 # git cannot store empty directories so they may need to be created 
 directories: mod lib
@@ -155,6 +156,9 @@ driver: libifsaux libifsrrtm libutilities libradiation
 ifsdriver: libifsaux libifsrrtm libutilities libradiation libifs
 	cd driver && $(MAKE) ifs_driver
 
+build_ecradoff:
+	cd ecradoff && $(MAKE)
+
 test_programs: driver
 	cd driver && $(MAKE) test_programs
 
@@ -173,7 +177,7 @@ test_i3rc: driver
 test_ckdmip:
 	cd test/ckdmip && $(MAKE) test
 
-clean: clean-tests clean-toplevel clean-utilities clean-mods clean-symlinks
+clean: clean-tests clean-toplevel clean-utilities clean-mods clean-symlinks clean-ecradoff
 
 clean-tests:
 	cd test/ifs && $(MAKE) clean
@@ -199,6 +203,10 @@ clean-symlinks:
 
 clean-autosaves:
 	rm -f *~ .gitignore~ */*~ */*/*~
+
+clean-ecradoff:
+	rm -f ecradoff/f_src/*.so
+	rm -f ecradoff/f_src/*.mod
 
 .PHONY: all build help deps clean-deps libifsaux libdummydrhook libutilities libifsrrtm \
 	libradiation driver symlinks clean clean-toplevel test test_ifs ifsdriver \

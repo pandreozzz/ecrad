@@ -11,3 +11,11 @@ mod
 /bin/ecrad
 /bin/ecrad_ifs
 /bin/ecrad_ifs_blocked
+*.so
+/ecradoff/inputs
+/ecradoff/outputs
+/ecradoff/clim_files
+/ecradoff/era5
+/ecradoff/f_src/*.mod
+rundir
+*__pycache__
