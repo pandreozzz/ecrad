@@ -860,7 +860,8 @@ contains
 
 
   !---------------------------------------------------------------------
-  ! Read a 1D character array into "vector", which must be allocatable
+  ! Read a 1D multi-character array into "vector", which must be allocatable
+  ! The element can be arbitrary character sequence
   ! and will be reallocated if necessary
   subroutine get_char_vector(this, var_name, vector)
 
@@ -868,15 +869,18 @@ contains
 
     class(netcdf_file)           :: this
     character(len=*), intent(in) :: var_name
-    character(len=1), allocatable, intent(out) :: vector(:)
+    character(len=*), allocatable, intent(out) :: vector(:)
 
     integer                      :: n
+
+    n = 0
 
     !! these two if statements have to be nested, because MPL_NPROC() crashes if mpi is not initialized
     if (this%is_master_task) then
       call this%file%get(var_name, vector)
       n = size(vector)
     end if
+
     if (this%mpi_enabled) then
       if (MPL_NPROC() > 1) then
         CALL MPL_BROADCAST(n, mtagrad, 1, &
