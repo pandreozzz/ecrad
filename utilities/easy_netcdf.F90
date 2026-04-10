@@ -21,6 +21,7 @@
 !   2019-01-16  R. Hogan  Revised interpretation of "iverbose"
 !   2019-06-17  R. Hogan  Pass through deflate_level and shuffle to variable definition
 !   2021-03-15  O. Marsden Add 'first-touch' option to the 4D array get method, to allow improved OpenMP access to arrays.
+!   2023-06-15  P. Andreozzi get_char_vector to read array of arbitrarily-long strings
 
 
 module easy_netcdf
@@ -839,16 +840,18 @@ contains
 
 
   !---------------------------------------------------------------------
-  ! Read a 1D character array into "vector", which must be allocatable
+  ! Read a 1D multi-character array into "vector", which must be allocatable
+  ! Supports arbitrary sequence of characters (string vectors)
   ! and will be reallocated if necessary
   subroutine get_char_vector(this, var_name, vector)
     use netcdf, only: NF90_MAX_VAR_DIMS, NF90_NOERR, nf90_get_var, nf90_strerror
 
     class(netcdf_file)           :: this
     character(len=*), intent(in) :: var_name
-    character(len=1), allocatable, intent(out) :: vector(:)
+    character(len=*), allocatable, intent(out) :: vector(:)
 
     integer                      :: n  ! Length of vector
+    integer                      :: m  ! Length of string
     integer                      :: istatus
     integer                      :: ivarid, ndims
     integer                      :: ndimlens(NF90_MAX_VAR_DIMS)
@@ -857,17 +860,37 @@ contains
     call this%get_variable_id(var_name, ivarid)
     call this%get_array_dimensions(ivarid, ndims, ndimlens)
 
-    ! Ensure variable has only one dimension in the file
+    m = len(vector)
     n = 1
-    do j = 1, ndims
-      n = n * ndimlens(j)
-      if (j > 1 .and. ndimlens(j) > 1) then
-        write(nulerr,'(a,a,a)') '*** Error reading NetCDF variable ', &
-             & var_name, &
-             & ' as a vector: all dimensions above the first must be singletons'
+
+    ! Supports both string and single-char vectors
+    if (m > 1) then
+      ! String arrays: first NetCDF dimension is the string length
+      if (ndimlens(1) /= m) then
+        write(nulerr,'(a,i0,a,i0)') "Error reading char vector, expecting first dimension ",m," found instead ",ndimlens(1)
         call my_abort('Error reading NetCDF file')
       end if
-    end do
+      do j = 2, ndims
+        if (n > 1 .and. ndimlens(j) /= 1) then
+          write(nulerr,'(a,a,a)') '*** Error reading NetCDF variable ', &
+               & var_name, &
+               & ' as a string vector: only one non-singleton dimension allowed after first'
+          call my_abort('Error reading NetCDF file')
+        end if
+        n = n*ndimlens(j)
+      end do
+    else
+      ! Single-char arrays (len=1)
+      do j = 1, ndims
+        if (j > 1 .and. ndimlens(j) > 1) then
+          write(nulerr,'(a,a,a)') '*** Error reading NetCDF variable ', &
+               & var_name, &
+               & ' as a single-char vector: all dimensions above the first must be singletons'
+          call my_abort('Error reading NetCDF file')
+        end if
+        n = n*ndimlens(j)
+      end do
+    end if
 
     ! Reallocate if necessary
     if (allocated(vector)) then
