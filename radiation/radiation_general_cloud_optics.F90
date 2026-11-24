@@ -19,7 +19,7 @@ module radiation_general_cloud_optics
   implicit none
 
   public
-  
+
 contains
 
   ! Provides elemental function "delta_eddington_scat_od"
@@ -134,7 +134,7 @@ contains
   !---------------------------------------------------------------------
   ! Compute cloud optical properties
   subroutine general_cloud_optics(nlev,istartcol,iendcol, &
-       &  config, single_level, thermodynamics, cloud, &  
+       &  config, single_level, thermodynamics, cloud, &
        &  od_lw_cloud, ssa_lw_cloud, pf_lw_cloud, &
        &  od_sw_cloud, ssa_sw_cloud, pf_sw_cloud)
 
@@ -143,7 +143,8 @@ contains
 
     use radiation_io,     only : nulout, nulerr, radiation_abort
     use radiation_config, only : config_type, SolverPhaseFuncMode, ICloudScalingCover, &
-         &                       ICloudScalingOne, ICloudScalingFraction, IPhaseFuncAsymmetry
+         &                       ICloudScalingOne, ICloudScalingFraction, IPhaseFuncAsymmetry, &
+         &                       ISolverFlotsam, ISolverFlotsamICA
     use radiation_single_level, only      : single_level_type
     use radiation_thermodynamics, only    : thermodynamics_type
     use radiation_cloud, only             : cloud_type
@@ -187,7 +188,7 @@ contains
 
     ! Layer thickness (m), full-level temperature (K)
     real(jprb), dimension(istartcol:iendcol,nlev) :: layer_depth, temperature_fl
-    
+
     ! Cloud cover
     real(jprb) :: cld_cover
 
@@ -228,7 +229,7 @@ contains
              &     + thermodynamics%pressure_hl(jcol,jlev+1))
       end do
     end do
-    
+
     ! Loop over cloud types
     do jtype = 1,config%n_cloud_types
       ! Compute in-cloud water path
@@ -279,7 +280,7 @@ contains
                &  layer_depth, temperature_fl)
         end if
       end if
-      
+
       if (config%do_sw) then
         ! For the moment, we use ssa_sw_cloud and pf_sw_cloud
         ! (normally containing asymmetry factor) as containers for
@@ -328,11 +329,14 @@ contains
         end do
       end do
     end if
-    
+
     ! Scale the combined shortwave optical properties
     if (config%do_sw) then
       if (.not. config%do_sw_delta_scaling_with_gases &
-           &  .and. SolverPhaseFuncMode(config%i_solver_sw) == IPhaseFuncAsymmetry) then
+           &  .and. SolverPhaseFuncMode(config%i_solver_sw) == IPhaseFuncAsymmetry &
+           &  .and. config%i_solver_sw /= ISolverFlotsam &
+           &  .and. config%i_solver_sw /= ISolverFlotsamICA &
+           &) then
         do jcol = istartcol, iendcol
           do jlev = 1,nlev
             if (cloud%fraction(jcol,jlev) > 0.0_jprb) then
@@ -372,7 +376,7 @@ contains
     use yomhook,     only : lhook, dr_hook, jphook
     use easy_netcdf, only : netcdf_file
     use radiation_config, only : config_type
-    
+
     type(config_type),  intent(in) :: config
     character(len=*),   intent(in) :: file_prefix
     integer,  optional, intent(in) :: iverbose
@@ -398,7 +402,7 @@ contains
         end associate
       end if
     end do
-    
+
     if (lhook) call dr_hook('radiation_general_cloud_optics:save',1,hook_handle)
 
   end subroutine save_general_cloud_optics
